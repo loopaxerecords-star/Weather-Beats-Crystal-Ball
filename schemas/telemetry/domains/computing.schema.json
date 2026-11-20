@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "computing Telemetry Schema",
+  "allOf": [
+    {
+      "$ref": "#/$defs/eventCommon"
+    },
+    {
+      "properties": {
+        "domain": {
+          "const": "computing"
+        },
+        "measurement": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/measurement"
+            },
+            {
+              "properties": {
+                "measurement_id": {
+                  "enum": [
+                    "cpu_usage",
+                    "memory_usage",
+                    "disk_usage",
+                    "disk_io",
+                    "gpu_usage",
+                    "gpu_memory_usage",
+                    "process_count",
+                    "thread_count",
+                    "application_latency",
+                    "inference_latency",
+                    "service_availability",
+                    "error_count"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "context": {
+          "$ref": "#/$defs/computingContext"
+        }
+      },
+      "required": [
+        "domain",
+        "measurement",
+        "context"
+      ]
+    }
+  ],
+  "unevaluatedProperties": false
+}

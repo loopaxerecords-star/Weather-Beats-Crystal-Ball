@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "origin",
+    "provider",
+    "source_record_id",
+    "retrieved_at"
+  ],
+  "properties": {
+    "origin": {
+      "enum": [
+        "sensor",
+        "api",
+        "database",
+        "file_import",
+        "user",
+        "internal_service",
+        "model",
+        "external_device"
+      ]
+    },
+    "provider": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "source_record_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "source_uri": {
+      "type": "string",
+      "format": "uri"
+    },
+    "retrieved_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "source_version": {
+      "type": "string"
+    },
+    "licence": {
+      "type": "string"
+    },
+    "attribution": {
+      "type": "string"
+    },
+    "transformation_chain": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "operation",
+          "performed_at"
+        ],
+        "properties": {
+          "operation": {
+            "type": "string"
+          },
+          "performed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "software": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "parameters": {
+            "type": "object"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "parent_event_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "uniqueItems": true
+    }
+  },
+  "additionalProperties": false
+}

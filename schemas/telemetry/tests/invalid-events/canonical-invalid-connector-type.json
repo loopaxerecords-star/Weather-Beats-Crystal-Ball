@@ -1,0 +1,23 @@
+{
+  "schema_version": "1.0.0",
+  "timestamp": "2026-11-15T19:45:00Z",
+  "source": {
+    "id": "sensor_01",
+    "provider": "Test Org",
+    "connector_type": "telepathy_bus"
+  },
+  "domain": "weather",
+  "data_type": "observation",
+  "payload": {
+    "metrics": {
+      "air_temperature": 20
+    },
+    "units": {
+      "air_temperature": "°C"
+    },
+    "context": {},
+    "raw_data": {
+      "temp": 20
+    }
+  }
+}

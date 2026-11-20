@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "atmospheric Telemetry Schema",
+  "allOf": [
+    {
+      "$ref": "#/$defs/eventCommon"
+    },
+    {
+      "properties": {
+        "domain": {
+          "const": "atmospheric"
+        },
+        "measurement": {
+          "$ref": "#/$defs/atmosphericMeasurement"
+        },
+        "context": {
+          "$ref": "#/$defs/atmosphericContext"
+        }
+      },
+      "required": [
+        "domain",
+        "measurement",
+        "context"
+      ]
+    }
+  ],
+  "unevaluatedProperties": false
+}

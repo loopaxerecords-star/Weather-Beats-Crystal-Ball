@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "industrial Telemetry Schema",
+  "allOf": [
+    {
+      "$ref": "#/$defs/eventCommon"
+    },
+    {
+      "properties": {
+        "domain": {
+          "const": "industrial"
+        },
+        "measurement": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/measurement"
+            },
+            {
+              "properties": {
+                "measurement_id": {
+                  "enum": [
+                    "machine_temperature",
+                    "machine_vibration",
+                    "machine_pressure",
+                    "machine_speed",
+                    "production_count",
+                    "defect_count",
+                    "flow_rate",
+                    "operating_state",
+                    "downtime",
+                    "equipment_load"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "context": {
+          "$ref": "#/$defs/industrialContext"
+        }
+      },
+      "required": [
+        "domain",
+        "measurement",
+        "context"
+      ]
+    }
+  ],
+  "unevaluatedProperties": false
+}

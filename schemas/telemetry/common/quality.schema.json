@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "status",
+    "validation"
+  ],
+  "properties": {
+    "status": {
+      "enum": [
+        "valid",
+        "estimated",
+        "interpolated",
+        "corrected",
+        "suspect",
+        "degraded",
+        "invalid"
+      ]
+    },
+    "validation": {
+      "enum": [
+        "passed",
+        "warning",
+        "failed",
+        "pending"
+      ]
+    },
+    "quality_score": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "flags": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "missing",
+          "estimated",
+          "interpolated",
+          "outlier",
+          "sensor_fault",
+          "stale",
+          "clock_skew",
+          "unit_converted",
+          "modelled",
+          "manually_corrected",
+          "partial",
+          "duplicate_suspected"
+        ]
+      },
+      "uniqueItems": true
+    },
+    "validation_messages": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": false
+}

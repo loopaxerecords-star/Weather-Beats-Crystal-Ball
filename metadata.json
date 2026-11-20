@@ -1,0 +1,6 @@
+{
+  "name": "Weather Beats Universal Intelligence",
+  "description": "Universal Telemetry, Data Intelligence and Predictive AI Platform connecting 24 intelligence domains across physical, scientific, digital, and musical worlds.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

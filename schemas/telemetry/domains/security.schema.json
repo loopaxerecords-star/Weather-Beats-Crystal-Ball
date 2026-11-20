@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "security Telemetry Schema",
+  "allOf": [
+    {
+      "$ref": "#/$defs/eventCommon"
+    },
+    {
+      "properties": {
+        "domain": {
+          "const": "security"
+        },
+        "measurement": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/measurement"
+            },
+            {
+              "properties": {
+                "measurement_id": {
+                  "enum": [
+                    "failed_login_count",
+                    "successful_login_count",
+                    "security_alert_count",
+                    "threat_score",
+                    "vulnerability_count",
+                    "malware_detection_count",
+                    "intrusion_attempt_count",
+                    "firewall_block_count",
+                    "anomaly_score",
+                    "incident_severity"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "context": {
+          "$ref": "#/$defs/securityContext"
+        }
+      },
+      "required": [
+        "domain",
+        "measurement",
+        "context"
+      ]
+    }
+  ],
+  "unevaluatedProperties": false
+}

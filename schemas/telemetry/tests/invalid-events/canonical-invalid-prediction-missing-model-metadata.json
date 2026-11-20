@@ -1,0 +1,23 @@
+{
+  "schema_version": "1.0.0",
+  "timestamp": "2026-11-15T19:45:00Z",
+  "source": {
+    "id": "ml_node_01",
+    "provider": "Weather Beats AI",
+    "connector_type": "model_inference"
+  },
+  "domain": "weather",
+  "data_type": "prediction",
+  "payload": {
+    "metrics": {
+      "air_temperature": 21
+    },
+    "units": {
+      "air_temperature": "°C"
+    },
+    "context": {},
+    "raw_data": {
+      "temp": 21
+    }
+  }
+}

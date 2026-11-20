@@ -1,0 +1,40 @@
+{
+  "schema_version": "1.0.0",
+  "timestamp": "2026-11-15T19:45:00-08:00",
+  "source": {
+    "id": "noaa_metar_ksfo_01",
+    "provider": "NOAA Aviation Weather Center",
+    "connector_type": "rest_api",
+    "version": "2.1.0",
+    "origin": "api"
+  },
+  "domain": "weather",
+  "data_type": "observation",
+  "payload": {
+    "metrics": {
+      "air_temperature": 68,
+      "wind_speed": 10,
+      "relative_humidity": 65
+    },
+    "units": {
+      "air_temperature": "°F",
+      "wind_speed": "mph",
+      "relative_humidity": "%"
+    },
+    "context": {
+      "station_id": "KSFO",
+      "weather_condition": "clear"
+    },
+    "raw_data": {
+      "temp_f": 68,
+      "wind_mph": 10,
+      "rh_pct": 65
+    }
+  },
+  "location": {
+    "latitude": 37.6213,
+    "longitude": -122.379,
+    "coordinate_reference_system": "EPSG:4326",
+    "country_code": "US"
+  }
+}

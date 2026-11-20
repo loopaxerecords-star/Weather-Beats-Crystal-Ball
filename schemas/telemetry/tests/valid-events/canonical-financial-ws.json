@@ -1,0 +1,32 @@
+{
+  "schema_version": "1.0.0",
+  "timestamp": "2026-11-15T19:45:00.250Z",
+  "source": {
+    "id": "nasdaq_itch_feed_02",
+    "provider": "NASDAQ L1 Market Stream",
+    "connector_type": "websocket",
+    "origin": "api"
+  },
+  "domain": "financial",
+  "data_type": "time_series",
+  "payload": {
+    "metrics": {
+      "asset_price": 186.42,
+      "trade_volume": 61200
+    },
+    "units": {
+      "asset_price": "USD",
+      "trade_volume": "1"
+    },
+    "context": {
+      "ticker": "WBUI",
+      "exchange": "NASDAQ",
+      "currency": "USD"
+    },
+    "raw_data": {
+      "sym": "WBUI",
+      "px": 186.42,
+      "sz": 61200
+    }
+  }
+}

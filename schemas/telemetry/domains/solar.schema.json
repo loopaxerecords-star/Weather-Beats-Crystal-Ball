@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "solar Telemetry Schema",
+  "allOf": [
+    {
+      "$ref": "#/$defs/eventCommon"
+    },
+    {
+      "properties": {
+        "domain": {
+          "const": "solar"
+        },
+        "measurement": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/measurement"
+            },
+            {
+              "properties": {
+                "measurement_id": {
+                  "enum": [
+                    "solar_irradiance",
+                    "solar_wind_speed",
+                    "solar_wind_density",
+                    "sunspot_number",
+                    "solar_flare_class",
+                    "solar_radiation",
+                    "geomagnetic_index",
+                    "solar_panel_irradiance"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "context": {
+          "$ref": "#/$defs/solarContext"
+        }
+      },
+      "required": [
+        "domain",
+        "measurement",
+        "context"
+      ]
+    }
+  ],
+  "unevaluatedProperties": false
+}

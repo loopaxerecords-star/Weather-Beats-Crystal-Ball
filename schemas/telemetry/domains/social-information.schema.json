@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "socialInformation Telemetry Schema",
+  "allOf": [
+    {
+      "$ref": "#/$defs/eventCommon"
+    },
+    {
+      "properties": {
+        "domain": {
+          "const": "social_information"
+        },
+        "measurement": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/measurement"
+            },
+            {
+              "properties": {
+                "measurement_id": {
+                  "enum": [
+                    "mention_count",
+                    "topic_frequency",
+                    "sentiment_score",
+                    "information_volume",
+                    "engagement_count",
+                    "trend_velocity",
+                    "source_count",
+                    "event_frequency"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "context": {
+          "$ref": "#/$defs/socialInformationContext"
+        }
+      },
+      "required": [
+        "domain",
+        "measurement",
+        "context"
+      ]
+    }
+  ],
+  "unevaluatedProperties": false
+}

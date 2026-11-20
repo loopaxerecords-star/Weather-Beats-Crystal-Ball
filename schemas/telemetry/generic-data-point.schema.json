@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://weatherbeats.local/schemas/telemetry/1.0.0/generic-data-point.schema.json",
+  "title": "Weather Beats Generic Telemetry Data Point",
+  "description": "Standalone lightweight ingestion envelope for generic telemetry data points mapping to the 24-domain canonical telemetry registry.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "timestamp",
+    "source_id",
+    "domain",
+    "payload"
+  ],
+  "properties": {
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 / RFC 3339 date-time string indicating when the telemetry data point was recorded (e.g., 2026-11-12T21:47:46Z or 2026-11-12T21:47:46-08:00)."
+    },
+    "source_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^\\S(.*\\S)?$",
+      "description": "Unique non-empty identifier for the originating data source, sensor node, or external connector."
+    },
+    "domain": {
+      "type": "string",
+      "enum": [
+        "weather",
+        "atmospheric",
+        "environmental",
+        "geographic",
+        "geological",
+        "oceanographic",
+        "solar",
+        "space",
+        "biological",
+        "agricultural",
+        "industrial",
+        "energy",
+        "smart_building",
+        "transport",
+        "network",
+        "computing",
+        "financial",
+        "economic",
+        "business",
+        "social_information",
+        "audio",
+        "musical",
+        "artificial_intelligence",
+        "security"
+      ],
+      "description": "Canonical intelligence domain identifier (e.g., 'weather', 'financial') matching the 24-domain Universal Intelligence registry."
+    },
+    "payload": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": true,
+      "description": "Domain-specific telemetry data object holding measurements, metrics, and contextual attributes."
+    }
+  }
+}

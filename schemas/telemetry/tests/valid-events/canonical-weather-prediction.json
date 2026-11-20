@@ -1,0 +1,34 @@
+{
+  "schema_version": "1.0.0",
+  "timestamp": "2026-11-15T20:45:00Z",
+  "source": {
+    "id": "wb_forecast_engine_01",
+    "provider": "Weather Beats Inference Pipeline",
+    "connector_type": "model_inference",
+    "origin": "model"
+  },
+  "domain": "weather",
+  "data_type": "prediction",
+  "payload": {
+    "metrics": {
+      "air_temperature": 17.4
+    },
+    "units": {
+      "air_temperature": "°C"
+    },
+    "context": {
+      "station_id": "EGLL"
+    },
+    "raw_data": {
+      "predicted_temp_c": 17.4
+    }
+  },
+  "model_metadata": {
+    "model_id": "weatherbeats_temporal_ensemble",
+    "model_version": "2.5.0",
+    "generated_at": "2026-11-15T19:45:00Z",
+    "input_dataset": "noaa_metar_1h_window",
+    "forecast_horizon_seconds": 3600,
+    "evaluation_status": "evaluated"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "timestamp": "2026-11-12T21:47:46-05:00",
+  "source_id": "feed_nasdaq_l1_node_04",
+  "domain": "financial",
+  "payload": {
+    "ticker": "WBUI",
+    "asset_price": 184.62,
+    "trade_volume": 42500,
+    "unit": "USD"
+  }
+}

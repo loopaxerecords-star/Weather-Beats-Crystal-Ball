@@ -1,0 +1,28 @@
+{
+  "schema_version": "1.0.0",
+  "timestamp": "2026-11-15T19:45:00Z",
+  "source": {
+    "id": "siem_edge_gateway_03",
+    "provider": "Weather Beats ZeroTrust Sensor",
+    "connector_type": "webhook",
+    "origin": "internal_service"
+  },
+  "domain": "security",
+  "data_type": "event",
+  "payload": {
+    "metrics": {
+      "failed_login_count": 14
+    },
+    "units": {
+      "failed_login_count": "count"
+    },
+    "context": {
+      "region": "eu-west-2",
+      "severity": "elevated"
+    },
+    "raw_data": {
+      "failed_auth_attempts": 14,
+      "gateway_id": "gw-eu-03"
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "timestamp": "2026-11-12T21:47:46Z",
+  "source_id": "wstation_london_heathrow_01",
+  "domain": "weather",
+  "payload": {
+    "air_temperature": 14.8,
+    "relative_humidity": 72,
+    "unit": "°C",
+    "latitude": 51.47,
+    "longitude": -0.4543
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "schema_version": "1.0.0",
+  "timestamp": "2026-11-15T19:45:00Z",
+  "source": {
+    "id": "mandala_vst3_dsp_01",
+    "provider": "Weather Beats DSP Engine",
+    "connector_type": "dsp_bus",
+    "origin": "internal_service",
+    "node_id": "coreaudio-48k-node"
+  },
+  "domain": "audio",
+  "data_type": "audio",
+  "payload": {
+    "metrics": {
+      "peak_amplitude": 0.5,
+      "spectral_centroid": 1480
+    },
+    "units": {
+      "peak_amplitude": "linear",
+      "spectral_centroid": "Hz"
+    },
+    "context": {
+      "sample_rate_hz": 48000,
+      "buffer_size": 1024
+    },
+    "raw_data": {
+      "peak_linear": 0.5,
+      "centroid_hz": 1480,
+      "sample_rate_hz": 48000,
+      "block_size": 1024
+    }
+  }
+}

@@ -1,0 +1,385 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://weatherbeats.local/schemas/telemetry/1.0.0/canonical-model.schema.json",
+  "title": "Weather Beats Universal Intelligence Canonical Data Model",
+  "description": "Unified canonical telemetry data model accommodating all 24 intelligence domains for consistent ingestion, unit normalization, raw payload preservation, and cross-domain analysis.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "timestamp",
+    "source",
+    "domain",
+    "data_type",
+    "payload"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0.0",
+      "description": "Semantic version of the Weather Beats Canonical Data Model contract."
+    },
+    "id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Optional canonical UUID v4 identifier assigned at ingestion or normalization."
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Timezone-aware ISO 8601 / RFC 3339 date-time string normalized to UTC during canonical ingestion."
+    },
+    "source": {
+      "$ref": "#/$defs/sourceDescriptor"
+    },
+    "domain": {
+      "type": "string",
+      "enum": [
+        "weather",
+        "atmospheric",
+        "environmental",
+        "geographic",
+        "geological",
+        "oceanographic",
+        "solar",
+        "space",
+        "biological",
+        "agricultural",
+        "industrial",
+        "energy",
+        "smart_building",
+        "transport",
+        "network",
+        "computing",
+        "financial",
+        "economic",
+        "business",
+        "social_information",
+        "audio",
+        "musical",
+        "artificial_intelligence",
+        "security"
+      ],
+      "description": "Canonical intelligence domain identifier across all 24 Universal Intelligence domains."
+    },
+    "data_type": {
+      "type": "string",
+      "enum": [
+        "observation",
+        "forecast",
+        "prediction",
+        "metric",
+        "event",
+        "time_series",
+        "audio"
+      ],
+      "description": "Canonical telemetry taxonomy separating empirical observations, forecasts, predictions, metrics, discrete events, time series, and audio buffers."
+    },
+    "payload": {
+      "$ref": "#/$defs/normalizedPayload"
+    },
+    "location": {
+      "$ref": "#/$defs/location"
+    },
+    "quality": {
+      "$ref": "#/$defs/quality"
+    },
+    "model_metadata": {
+      "$ref": "#/$defs/modelMetadata"
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128
+      },
+      "uniqueItems": true
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "data_type": {
+            "enum": [
+              "forecast",
+              "prediction"
+            ]
+          }
+        },
+        "required": [
+          "data_type"
+        ]
+      },
+      "then": {
+        "required": [
+          "model_metadata"
+        ]
+      }
+    }
+  ],
+  "$defs": {
+    "sourceDescriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "provider",
+        "connector_type"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^\\S(.*\\S)?$",
+          "description": "Unique non-empty identifier for the data source, sensor node, host, or feed."
+        },
+        "provider": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^\\S(.*\\S)?$",
+          "description": "Originating organization, station network, exchange, or telemetry system."
+        },
+        "connector_type": {
+          "type": "string",
+          "enum": [
+            "sensor_stream",
+            "rest_api",
+            "websocket",
+            "webhook",
+            "dsp_bus",
+            "file_import",
+            "model_inference",
+            "manual_entry"
+          ],
+          "description": "Ingestion transport or adapter mechanism supplying this telemetry record."
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "origin": {
+          "type": "string",
+          "enum": [
+            "sensor",
+            "api",
+            "database",
+            "file_import",
+            "user",
+            "internal_service",
+            "model",
+            "external_device"
+          ]
+        },
+        "uri": {
+          "type": "string",
+          "format": "uri"
+        },
+        "node_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "normalizedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "metrics",
+        "units",
+        "context",
+        "raw_data"
+      ],
+      "properties": {
+        "metrics": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": true,
+          "description": "Canonical normalized measurements keyed by standardized metric identifier."
+        },
+        "units": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "description": "Map of metric keys to UCUM-aligned canonical unit strings (use '1' for dimensionless values)."
+        },
+        "context": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Domain-specific dimensional attributes (e.g., station_id, ticker, host_id, sample_rate_hz)."
+        },
+        "raw_data": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": true,
+          "description": "Verbatim un-normalized upstream payload preserved for forensic auditability and replay."
+        }
+      }
+    },
+    "location": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "latitude",
+        "longitude",
+        "coordinate_reference_system"
+      ],
+      "properties": {
+        "latitude": {
+          "type": "number",
+          "minimum": -90,
+          "maximum": 90
+        },
+        "longitude": {
+          "type": "number",
+          "minimum": -180,
+          "maximum": 180
+        },
+        "altitude_m": {
+          "type": "number"
+        },
+        "coordinate_reference_system": {
+          "const": "EPSG:4326"
+        },
+        "place_id": {
+          "type": "string"
+        },
+        "region": {
+          "type": "string"
+        },
+        "country_code": {
+          "type": "string",
+          "pattern": "^[A-Z]{2}$"
+        }
+      }
+    },
+    "quality": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "validation"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "valid",
+            "estimated",
+            "interpolated",
+            "corrected",
+            "suspect",
+            "degraded",
+            "invalid"
+          ]
+        },
+        "validation": {
+          "type": "string",
+          "enum": [
+            "passed",
+            "warning",
+            "failed",
+            "pending"
+          ]
+        },
+        "quality_score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "flags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "normalization_applied": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "validation_messages": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "modelMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model_id",
+        "model_version",
+        "generated_at",
+        "input_dataset"
+      ],
+      "properties": {
+        "model_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "model_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "generated_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "input_dataset": {
+          "type": "string",
+          "minLength": 1
+        },
+        "forecast_horizon_seconds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "valid_until": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "confidence_interval": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "lower",
+            "upper"
+          ],
+          "properties": {
+            "lower": {
+              "type": "number"
+            },
+            "upper": {
+              "type": "number"
+            },
+            "level": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "exclusiveMaximum": 1
+            }
+          }
+        },
+        "evaluation_status": {
+          "type": "string",
+          "enum": [
+            "not_evaluated",
+            "evaluated",
+            "under_review",
+            "rejected"
+          ]
+        }
+      }
+    }
+  }
+}

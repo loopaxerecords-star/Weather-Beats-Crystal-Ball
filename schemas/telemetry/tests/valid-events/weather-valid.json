@@ -1,0 +1,43 @@
+{
+  "schema_version": "1.0.0",
+  "event_id": "123e4567-e89b-12d3-a456-426614174000",
+  "domain": "weather",
+  "source_id": "src_weather_london_01",
+  "connector_id": "conn_openmeteo_v1",
+  "data_class": "observation",
+  "origin_type": "third_party_observation",
+  "event_time": "2026-11-16T03:54:32.894Z",
+  "ingested_at": "2026-11-16T03:54:32.895Z",
+  "original_timezone": "Europe/London",
+  "measurement": {
+    "measurement_id": "air_temperature",
+    "value": 19.5,
+    "unit": "°C",
+    "raw_value": 19.5,
+    "raw_unit": "°C"
+  },
+  "location": {
+    "latitude": 51.5074,
+    "longitude": -0.1278,
+    "altitude_m": 25,
+    "coordinate_reference_system": "EPSG:4326",
+    "region": "Greater London",
+    "country_code": "GB"
+  },
+  "provenance": {
+    "origin": "api",
+    "provider": "Open-Meteo",
+    "source_record_id": "om_rec_98124",
+    "retrieved_at": "2026-11-16T03:54:32.895Z"
+  },
+  "quality": {
+    "status": "valid",
+    "validation": "passed",
+    "quality_score": 0.99,
+    "flags": []
+  },
+  "context": {
+    "station_id": "EGLL_HEATROW",
+    "weather_condition": "Partly Cloudy"
+  }
+}

@@ -1,0 +1,156 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "event_id",
+    "domain",
+    "source_id",
+    "connector_id",
+    "data_class",
+    "origin_type",
+    "event_time",
+    "ingested_at",
+    "measurement",
+    "provenance",
+    "quality"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "event_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "domain": {
+      "type": "string"
+    },
+    "source_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "connector_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "data_class": {
+      "enum": [
+        "observation",
+        "forecast",
+        "event",
+        "state",
+        "metric",
+        "log",
+        "trace",
+        "time_series",
+        "image",
+        "audio",
+        "video",
+        "prediction",
+        "derived_measurement"
+      ]
+    },
+    "origin_type": {
+      "enum": [
+        "direct_sensor_measurement",
+        "third_party_observation",
+        "modelled_estimate",
+        "forecast",
+        "ai_generated_inference",
+        "derived_calculation",
+        "user_provided_information",
+        "imported_record"
+      ]
+    },
+    "event_time": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Time the measurement or event occurred. Store in UTC."
+    },
+    "ingested_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Time the platform received the event. Store in UTC."
+    },
+    "original_timezone": {
+      "type": "string",
+      "description": "Original IANA timezone where known, for example Africa/Johannesburg."
+    },
+    "measurement": {
+      "$ref": "#/$defs/measurement"
+    },
+    "location": {
+      "$ref": "#/$defs/location"
+    },
+    "provenance": {
+      "$ref": "#/$defs/provenance"
+    },
+    "quality": {
+      "$ref": "#/$defs/quality"
+    },
+    "model_metadata": {
+      "$ref": "#/$defs/modelMetadata"
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 128
+      },
+      "uniqueItems": true
+    },
+    "extensions": {
+      "type": "object",
+      "description": "Versioned extension namespace. Must not replace canonical fields.",
+      "additionalProperties": true
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "data_class": {
+            "enum": [
+              "forecast",
+              "prediction"
+            ]
+          }
+        },
+        "required": [
+          "data_class"
+        ]
+      },
+      "then": {
+        "required": [
+          "model_metadata"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "data_class": {
+            "const": "prediction"
+          }
+        },
+        "required": [
+          "data_class"
+        ]
+      },
+      "then": {
+        "properties": {
+          "origin_type": {
+            "enum": [
+              "ai_generated_inference",
+              "modelled_estimate",
+              "derived_calculation"
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

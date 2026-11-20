@@ -1,0 +1,31 @@
+{
+  "schema_version": "0.9.0",
+  "event_id": "invalid-id-format",
+  "domain": "weather",
+  "source_id": "src_node_01",
+  "connector_id": "conn_v1",
+  "data_class": "prediction",
+  "origin_type": "direct_sensor_measurement",
+  "event_time": "invalid-date",
+  "ingested_at": "2026-11-16T03:54:32.895Z",
+  "measurement": {
+    "measurement_id": "air_temperature",
+    "value": 999,
+    "unit": "km/h"
+  },
+  "location": {
+    "latitude": 195,
+    "longitude": -0.1278,
+    "coordinate_reference_system": "EPSG:4326"
+  },
+  "provenance": {
+    "origin": "sensor",
+    "provider": "",
+    "source_record_id": "",
+    "retrieved_at": "2026-11-16T03:54:32.895Z"
+  },
+  "quality": {
+    "status": "invalid",
+    "validation": "failed"
+  }
+}

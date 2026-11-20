@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "model_id",
+    "model_version",
+    "generated_at",
+    "input_dataset"
+  ],
+  "properties": {
+    "model_id": {
+      "type": "string"
+    },
+    "model_version": {
+      "type": "string"
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "input_dataset": {
+      "type": "string"
+    },
+    "forecast_horizon_seconds": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "valid_until": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "confidence_interval": {
+      "type": "object",
+      "required": [
+        "lower",
+        "upper"
+      ],
+      "properties": {
+        "lower": {
+          "type": "number"
+        },
+        "upper": {
+          "type": "number"
+        },
+        "level": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "exclusiveMaximum": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "evaluation_status": {
+      "enum": [
+        "not_evaluated",
+        "evaluated",
+        "under_review",
+        "rejected"
+      ]
+    }
+  },
+  "additionalProperties": false
+}

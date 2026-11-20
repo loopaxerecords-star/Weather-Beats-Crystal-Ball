@@ -1,0 +1,8 @@
+{
+  "timestamp": "2026-11-12T21:47:46",
+  "source_id": "sensor_01",
+  "domain": "weather",
+  "payload": {
+    "air_temperature": 20
+  }
+}

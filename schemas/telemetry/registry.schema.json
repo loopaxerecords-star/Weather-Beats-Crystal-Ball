@@ -1,0 +1,1699 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://weatherbeats.local/schemas/telemetry/1.0.0/registry.schema.json",
+  "title": "Weather Beats Universal Intelligence Telemetry Registry",
+  "description": "Canonical telemetry event contract for all 24 intelligence domains.",
+  "type": "object",
+  "oneOf": [
+    { "$ref": "#/$defs/weatherEvent" },
+    { "$ref": "#/$defs/atmosphericEvent" },
+    { "$ref": "#/$defs/environmentalEvent" },
+    { "$ref": "#/$defs/geographicEvent" },
+    { "$ref": "#/$defs/geologicalEvent" },
+    { "$ref": "#/$defs/oceanographicEvent" },
+    { "$ref": "#/$defs/solarEvent" },
+    { "$ref": "#/$defs/spaceEvent" },
+    { "$ref": "#/$defs/biologicalEvent" },
+    { "$ref": "#/$defs/agriculturalEvent" },
+    { "$ref": "#/$defs/industrialEvent" },
+    { "$ref": "#/$defs/energyEvent" },
+    { "$ref": "#/$defs/smartBuildingEvent" },
+    { "$ref": "#/$defs/transportEvent" },
+    { "$ref": "#/$defs/networkEvent" },
+    { "$ref": "#/$defs/computingEvent" },
+    { "$ref": "#/$defs/financialEvent" },
+    { "$ref": "#/$defs/economicEvent" },
+    { "$ref": "#/$defs/businessEvent" },
+    { "$ref": "#/$defs/socialInformationEvent" },
+    { "$ref": "#/$defs/audioEvent" },
+    { "$ref": "#/$defs/musicalEvent" },
+    { "$ref": "#/$defs/artificialIntelligenceEvent" },
+    { "$ref": "#/$defs/securityEvent" }
+  ],
+  "$defs": {
+    "eventCommon": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "event_id",
+        "domain",
+        "source_id",
+        "connector_id",
+        "data_class",
+        "origin_type",
+        "event_time",
+        "ingested_at",
+        "measurement",
+        "provenance",
+        "quality"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "event_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "domain": {
+          "type": "string"
+        },
+        "source_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "connector_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "data_class": {
+          "enum": [
+            "observation",
+            "forecast",
+            "event",
+            "state",
+            "metric",
+            "log",
+            "trace",
+            "time_series",
+            "image",
+            "audio",
+            "video",
+            "prediction",
+            "derived_measurement"
+          ]
+        },
+        "origin_type": {
+          "enum": [
+            "direct_sensor_measurement",
+            "third_party_observation",
+            "modelled_estimate",
+            "forecast",
+            "ai_generated_inference",
+            "derived_calculation",
+            "user_provided_information",
+            "imported_record"
+          ]
+        },
+        "event_time": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Time the measurement or event occurred. Store in UTC."
+        },
+        "ingested_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Time the platform received the event. Store in UTC."
+        },
+        "original_timezone": {
+          "type": "string",
+          "description": "Original IANA timezone where known, for example Africa/Johannesburg."
+        },
+        "measurement": {
+          "$ref": "#/$defs/measurement"
+        },
+        "location": {
+          "$ref": "#/$defs/location"
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        },
+        "quality": {
+          "$ref": "#/$defs/quality"
+        },
+        "model_metadata": {
+          "$ref": "#/$defs/modelMetadata"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "uniqueItems": true
+        },
+        "extensions": {
+          "type": "object",
+          "description": "Versioned extension namespace. Must not replace canonical fields.",
+          "additionalProperties": true
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "data_class": {
+                "enum": ["forecast", "prediction"]
+              }
+            },
+            "required": ["data_class"]
+          },
+          "then": {
+            "required": ["model_metadata"]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "data_class": {
+                "const": "prediction"
+              }
+            },
+            "required": ["data_class"]
+          },
+          "then": {
+            "properties": {
+              "origin_type": {
+                "enum": [
+                  "ai_generated_inference",
+                  "modelled_estimate",
+                  "derived_calculation"
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "measurement": {
+      "type": "object",
+      "required": ["measurement_id", "value", "unit"],
+      "properties": {
+        "measurement_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "value": {
+          "oneOf": [
+            { "type": "number" },
+            { "type": "string", "maxLength": 4096 },
+            { "type": "boolean" },
+            { "type": "object" },
+            { "type": "array" }
+          ]
+        },
+        "unit": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "description": "UCUM-compatible unit where applicable. Use '1' for dimensionless values."
+        },
+        "raw_value": {
+          "oneOf": [
+            { "type": "number" },
+            { "type": "string" },
+            { "type": "boolean" }
+          ]
+        },
+        "raw_unit": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "normalisation": {
+          "type": "object",
+          "required": ["method"],
+          "properties": {
+            "method": { "type": "string" },
+            "factor": { "type": "number" },
+            "offset": { "type": "number" },
+            "reference": { "type": "string" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "location": {
+      "type": "object",
+      "properties": {
+        "latitude": {
+          "type": "number",
+          "minimum": -90,
+          "maximum": 90
+        },
+        "longitude": {
+          "type": "number",
+          "minimum": -180,
+          "maximum": 180
+        },
+        "altitude_m": {
+          "type": "number"
+        },
+        "coordinate_reference_system": {
+          "const": "EPSG:4326"
+        },
+        "place_id": {
+          "type": "string"
+        },
+        "region": {
+          "type": "string"
+        },
+        "country_code": {
+          "type": "string",
+          "pattern": "^[A-Z]{2}$"
+        }
+      },
+      "required": [
+        "latitude",
+        "longitude",
+        "coordinate_reference_system"
+      ],
+      "additionalProperties": false
+    },
+    "provenance": {
+      "type": "object",
+      "required": [
+        "origin",
+        "provider",
+        "source_record_id",
+        "retrieved_at"
+      ],
+      "properties": {
+        "origin": {
+          "enum": [
+            "sensor",
+            "api",
+            "database",
+            "file_import",
+            "user",
+            "internal_service",
+            "model",
+            "external_device"
+          ]
+        },
+        "provider": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "source_record_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "source_uri": {
+          "type": "string",
+          "format": "uri"
+        },
+        "retrieved_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "source_version": {
+          "type": "string"
+        },
+        "licence": {
+          "type": "string"
+        },
+        "attribution": {
+          "type": "string"
+        },
+        "transformation_chain": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["operation", "performed_at"],
+            "properties": {
+              "operation": { "type": "string" },
+              "performed_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "software": { "type": "string" },
+              "version": { "type": "string" },
+              "parameters": { "type": "object" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "parent_event_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "quality": {
+      "type": "object",
+      "required": ["status", "validation"],
+      "properties": {
+        "status": {
+          "enum": [
+            "valid",
+            "estimated",
+            "interpolated",
+            "corrected",
+            "suspect",
+            "degraded",
+            "invalid"
+          ]
+        },
+        "validation": {
+          "enum": ["passed", "warning", "failed", "pending"]
+        },
+        "quality_score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "flags": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "missing",
+              "estimated",
+              "interpolated",
+              "outlier",
+              "sensor_fault",
+              "stale",
+              "clock_skew",
+              "unit_converted",
+              "modelled",
+              "manually_corrected",
+              "partial",
+              "duplicate_suspected"
+            ]
+          },
+          "uniqueItems": true
+        },
+        "validation_messages": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "modelMetadata": {
+      "type": "object",
+      "required": [
+        "model_id",
+        "model_version",
+        "generated_at",
+        "input_dataset"
+      ],
+      "properties": {
+        "model_id": { "type": "string" },
+        "model_version": { "type": "string" },
+        "generated_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "input_dataset": { "type": "string" },
+        "forecast_horizon_seconds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "valid_until": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "confidence_interval": {
+          "type": "object",
+          "required": ["lower", "upper"],
+          "properties": {
+            "lower": { "type": "number" },
+            "upper": { "type": "number" },
+            "level": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "exclusiveMaximum": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "evaluation_status": {
+          "enum": [
+            "not_evaluated",
+            "evaluated",
+            "under_review",
+            "rejected"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "weatherEvent": {
+      "allOf": [
+        { "$ref": "#/$defs/eventCommon" },
+        {
+          "properties": {
+            "domain": { "const": "weather" },
+            "measurement": {
+              "allOf": [
+                { "$ref": "#/$defs/measurement" },
+                {
+                  "properties": {
+                    "measurement_id": {
+                      "enum": [
+                        "air_temperature",
+                        "feels_like_temperature",
+                        "relative_humidity",
+                        "precipitation",
+                        "rainfall",
+                        "wind_speed",
+                        "wind_direction",
+                        "wind_gust",
+                        "surface_pressure",
+                        "cloud_cover",
+                        "visibility",
+                        "uv_index",
+                        "weather_code"
+                      ]
+                    }
+                  }
+                }
+              ]
+            },
+            "context": {
+              "$ref": "#/$defs/weatherContext"
+            }
+          },
+          "required": ["domain", "measurement", "context"]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "weatherContext": {
+      "type": "object",
+      "properties": {
+        "station_id": { "type": "string" },
+        "forecast_run_id": { "type": "string" },
+        "forecast_horizon_seconds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "weather_condition": { "type": "string" },
+        "wind_direction_degrees": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 360
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "atmosphericEvent": {
+      "allOf": [
+        { "$ref": "#/$defs/eventCommon" },
+        {
+          "properties": {
+            "domain": { "const": "atmospheric" },
+            "measurement": {
+              "$ref": "#/$defs/atmosphericMeasurement"
+            },
+            "context": { "$ref": "#/$defs/atmosphericContext" }
+          },
+          "required": ["domain", "measurement", "context"]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "atmosphericMeasurement": {
+      "allOf": [
+        { "$ref": "#/$defs/measurement" },
+        {
+          "properties": {
+            "measurement_id": {
+              "enum": [
+                "atmospheric_pressure",
+                "pressure_tendency",
+                "temperature_profile",
+                "dew_point",
+                "wind_shear",
+                "lapse_rate",
+                "ozone_concentration",
+                "precipitable_water",
+                "boundary_layer_height"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "atmosphericContext": {
+      "type": "object",
+      "properties": {
+        "altitude_m": { "type": "number" },
+        "pressure_level_hpa": { "type": "number" },
+        "sounding_id": { "type": "string" },
+        "instrument_id": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+
+    "environmentalEvent": {
+      "allOf": [
+        { "$ref": "#/$defs/eventCommon" },
+        {
+          "properties": {
+            "domain": { "const": "environmental" },
+            "measurement": {
+              "allOf": [
+                { "$ref": "#/$defs/measurement" },
+                {
+                  "properties": {
+                    "measurement_id": {
+                      "enum": [
+                        "pm1",
+                        "pm2_5",
+                        "pm10",
+                        "carbon_dioxide",
+                        "carbon_monoxide",
+                        "nitrogen_dioxide",
+                        "sulphur_dioxide",
+                        "ozone",
+                        "noise_level",
+                        "water_quality",
+                        "soil_contamination",
+                        "radiation_level"
+                      ]
+                    }
+                  }
+                }
+              ]
+            },
+            "context": { "$ref": "#/$defs/environmentalContext" }
+          },
+          "required": ["domain", "measurement", "context"]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "environmentalContext": {
+      "type": "object",
+      "properties": {
+        "monitoring_station_id": { "type": "string" },
+        "sampling_method": { "type": "string" },
+        "averaging_period_seconds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "environment_type": {
+          "enum": ["urban", "rural", "industrial", "indoor", "marine", "other"]
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "geographicEvent": {
+      "allOf": [
+        { "$ref": "#/$defs/eventCommon" },
+        {
+          "properties": {
+            "domain": { "const": "geographic" },
+            "measurement": {
+              "allOf": [
+                { "$ref": "#/$defs/measurement" },
+                {
+                  "properties": {
+                    "measurement_id": {
+                      "enum": [
+                        "latitude",
+                        "longitude",
+                        "elevation",
+                        "distance",
+                        "area",
+                        "population_density",
+                        "slope",
+                        "aspect",
+                        "land_cover_class",
+                        "boundary_change"
+                      ]
+                    }
+                  }
+                }
+              ]
+            },
+            "context": { "$ref": "#/$defs/geographicContext" }
+          },
+          "required": ["domain", "measurement", "context"]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "geographicContext": {
+      "type": "object",
+      "properties": {
+        "feature_id": { "type": "string" },
+        "feature_type": { "type": "string" },
+        "geometry_type": {
+          "enum": ["point", "line", "polygon", "multipolygon", "raster"]
+        },
+        "coordinate_reference_system": {
+          "type": "string"
+        },
+        "boundary_version": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+
+    "geologicalEvent": {
+      "allOf": [
+        { "$ref": "#/$defs/eventCommon" },
+        {
+          "properties": {
+            "domain": { "const": "geological" },
+            "measurement": {
+              "allOf": [
+                { "$ref": "#/$defs/measurement" },
+                {
+                  "properties": {
+                    "measurement_id": {
+                      "enum": [
+                        "earthquake_magnitude",
+                        "seismic_acceleration",
+                        "seismic_velocity",
+                        "ground_displacement",
+                        "depth",
+                        "volcanic_activity",
+                        "gas_emission",
+                        "ground_temperature",
+                        "landslide_displacement"
+                      ]
+                    }
+                  }
+                }
+              ]
+            },
+            "context": { "$ref": "#/$defs/geologicalContext" }
+          },
+          "required": ["domain", "measurement", "context"]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "geologicalContext": {
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "enum": ["earthquake", "volcano", "landslide", "ground_motion", "other"]
+        },
+        "station_id": { "type": "string" },
+        "depth_km": { "type": "number", "minimum": 0 },
+        "magnitude_scale": { "type": "string" },
+        "tectonic_region": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+
+    "oceanographicEvent": {
+      "allOf": [
+        { "$ref": "#/$defs/eventCommon" },
+        {
+          "properties": {
+            "domain": { "const": "oceanographic" },
+            "measurement": {
+              "allOf": [
+                { "$ref": "#/$defs/measurement" },
+                {
+                  "properties": {
+                    "measurement_id": {
+                      "enum": [
+                        "sea_surface_temperature",
+                        "sea_level",
+                        "wave_height",
+                        "wave_period",
+                        "wave_direction",
+                        "current_speed",
+                        "current_direction",
+                        "salinity",
+                        "dissolved_oxygen",
+                        "chlorophyll",
+                        "tide_level"
+                      ]
+                    }
+                  }
+                }
+              ]
+            },
+            "context": { "$ref": "#/$defs/oceanographicContext" }
+          },
+          "required": ["domain", "measurement", "context"]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "oceanographicContext": {
+      "type": "object",
+      "properties": {
+        "buoy_id": { "type": "string" },
+        "depth_m": { "type": "number", "minimum": 0 },
+        "water_body": { "type": "string" },
+        "tide_phase": {
+          "enum": ["rising", "falling", "high", "low", "unknown"]
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "solarEvent": {
+      "allOf": [
+        { "$ref": "#/$defs/eventCommon" },
+        {
+          "properties": {
+            "domain": { "const": "solar" },
+            "measurement": {
+              "allOf": [
+                { "$ref": "#/$defs/measurement" },
+                {
+                  "properties": {
+                    "measurement_id": {
+                      "enum": [
+                        "solar_irradiance",
+                        "solar_wind_speed",
+                        "solar_wind_density",
+                        "sunspot_number",
+                        "solar_flare_class",
+                        "solar_radiation",
+                        "geomagnetic_index",
+                        "solar_panel_irradiance"
+                      ]
+                    }
+                  }
+                }
+              ]
+            },
+            "context": { "$ref": "#/$defs/solarContext" }
+          },
+          "required": ["domain", "measurement", "context"]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "solarContext": {
+      "type": "object",
+      "properties": {
+        "instrument_id": { "type": "string" },
+        "solar_region_id": { "type": "string" },
+        "flare_class": { "type": "string" },
+        "observation_band": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+
+    "spaceEvent": {
+      "allOf": [
+        { "$ref": "#/$defs/eventCommon" },
+        {
+          "properties": {
+            "domain": { "const": "space" },
+            "measurement": {
+              "allOf": [
+                { "$ref": "#/$defs/measurement" },
+                {
+                  "properties": {
+                    "measurement_id": {
+                      "enum": [
+                        "satellite_position",
+                        "orbital_altitude",
+                        "orbital_velocity",
+                        "radiation_flux",
+                        "proton_flux",
+                        "electron_flux",
+                        "geomagnetic_storm_level",
+                        "space_debris_distance",
+                        "solar_particle_event"
+                      ]
+                    }
+                  }
+                }
+              ]
+            },
+            "context": { "$ref": "#/$defs/spaceContext" }
+          },
+          "required": ["domain", "measurement", "context"]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "spaceContext": {
+      "type": "object",
+      "properties": {
+        "object_id": { "type": "string" },
+        "catalogue_id": { "type": "string" },
+        "orbit_class": { "type": "string" },
+        "reference_frame": { "type": "string" },
+        "mission_id": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+
+    "biologicalEvent": {
+      "allOf": [
+        { "$ref": "#/$defs/eventCommon" },
+        {
+          "properties": {
+            "domain": { "const": "biological" },
+            "measurement": {
+              "allOf": [
+                { "$ref": "#/$defs/measurement" },
+                {
+                  "properties": {
+                    "measurement_id": {
+                      "enum": [
+                        "heart_rate",
+                        "respiration_rate",
+                        "body_temperature",
+                        "biomass",
+                        "growth_rate",
+                        "population_count",
+                        "biodiversity_index",
+                        "chlorophyll_content",
+                        "biological_activity"
+                      ]
+                    }
+                  }
+                }
+              ]
+            },
+            "context": { "$ref": "#/$defs/biologicalContext" }
+          },
+          "required": ["domain", "measurement", "context"]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "biologicalContext": {
+      "type": "object",
+      "properties": {
+        "species_id": { "type": "string" },
+        "organism_id": { "type": "string" },
+        "sample_id": { "type": "string" },
+        "population_id": { "type": "string" },
+        "study_id": { "type": "string" },
+        "consent_status": {
+          "enum": ["not_applicable", "consented", "restricted", "unknown"]
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "agriculturalEvent": {
+      "allOf": [
+        { "$ref": "#/$defs/eventCommon" },
+        {
+          "properties": {
+            "domain": { "const": "agricultural" },
+            "measurement": {
+              "allOf": [
+                { "$ref": "#/$defs/measurement" },
+                {
+                  "properties": {
+                    "measurement_id": {
+                      "enum": [
+                        "soil_moisture",
+                        "soil_temperature",
+                        "soil_ph",
+                        "soil_nitrogen",
+                        "soil_phosphorus",
+                        "soil_potassium",
+                        "crop_growth",
+                        "yield_estimate",
+                        "irrigation_rate",
+                        "leaf_wetness",
+                        "evapotranspiration"
+                      ]
+                    }
+                  }
+                }
+              ]
+            },
+            "context": { "$ref": "#/$defs/agriculturalContext" }
+          },
+          "required": ["domain", "measurement", "context"]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "agriculturalContext": {
+      "type": "object",
+      "properties": {
+        "farm_id": { "type": "string" },
+        "field_id": { "type": "string" },
+        "crop_type": { "type": "string" },
+        "growth_stage": { "type": "string" },
+        "soil_type": { "type": "string" },
+        "irrigation_zone": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+
+    "industrialEvent": {
+      "allOf": [
+        { "$ref": "#/$defs/eventCommon" },
+        {
+          "properties": {
+            "domain": { "const": "industrial" },
+            "measurement": {
+              "allOf": [
+                { "$ref": "#/$defs/measurement" },
+                {
+                  "properties": {
+                    "measurement_id": {
+                      "enum": [
+                        "machine_temperature",
+                        "machine_vibration",
+                        "machine_pressure",
+                        "machine_speed",
+                        "production_count",
+                        "defect_count",
+                        "flow_rate",
+                        "operating_state",
+                        "downtime",
+                        "equipment_load"
+                      ]
+                    }
+                  }
+                }
+              ]
+            },
+            "context": { "$ref": "#/$defs/industrialContext" }
+          },
+          "required": ["domain", "measurement", "context"]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "industrialContext": {
+      "type": "object",
+      "properties": {
+        "facility_id": { "type": "string" },
+        "production_line_id": { "type": "string" },
+        "machine_id": { "type": "string" },
+        "equipment_type": { "type": "string" },
+        "operating_mode": { "type": "string" },
+        "maintenance_state": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+
+    "energyEvent": {
+      "allOf": [
+        { "$ref": "#/$defs/eventCommon" },
+        {
+          "properties": {
+            "domain": { "const": "energy" },
+            "measurement": {
+              "allOf": [
+                { "$ref": "#/$defs/measurement" },
+                {
+                  "properties": {
+                    "measurement_id": {
+                      "enum": [
+                        "power",
+                        "energy",
+                        "voltage",
+                        "current",
+                        "frequency",
+                        "power_factor",
+                        "energy_generation",
+                        "energy_consumption",
+                        "solar_generation",
+                        "battery_state_of_charge",
+                        "grid_import",
+                        "grid_export"
+                      ]
+                    }
+                  }
+                }
+              ]
+            },
+            "context": { "$ref": "#/$defs/energyContext" }
+          },
+          "required": ["domain", "measurement", "context"]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "energyContext": {
+      "type": "object",
+      "properties": {
+        "meter_id": { "type": "string" },
+        "device_id": { "type": "string" },
+        "site_id": { "type": "string" },
+        "phase": {
+          "enum": ["single", "L1", "L2", "L3", "three_phase", "not_applicable"]
+        },
+        "energy_source": { "type": "string" },
+        "grid_connection_id": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+
+    "smartBuildingEvent": {
+      "allOf": [
+        { "$ref": "#/$defs/eventCommon" },
+        {
+          "properties": {
+            "domain": { "const": "smart_building" },
+            "measurement": {
+              "allOf": [
+                { "$ref": "#/$defs/measurement" },
+                {
+                  "properties": {
+                    "measurement_id": {
+                      "enum": [
+                        "indoor_temperature",
+                        "indoor_humidity",
+                        "occupancy_count",
+                        "co2_level",
+                        "lighting_level",
+                        "hvac_state",
+                        "door_state",
+                        "water_flow",
+                        "building_energy_consumption"
+                      ]
+                    }
+                  }
+                }
+              ]
+            },
+            "context": { "$ref": "#/$defs/smartBuildingContext" }
+          },
+          "required": ["domain", "measurement", "context"]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "smartBuildingContext": {
+      "type": "object",
+      "properties": {
+        "building_id": { "type": "string" },
+        "floor_id": { "type": "string" },
+        "room_id": { "type": "string" },
+        "zone_id": { "type": "string" },
+        "device_id": { "type": "string" },
+        "occupancy_sensor_id": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+
+    "transportEvent": {
+      "allOf": [
+        { "$ref": "#/$defs/eventCommon" },
+        {
+          "properties": {
+            "domain": { "const": "transport" },
+            "measurement": {
+              "allOf": [
+                { "$ref": "#/$defs/measurement" },
+                {
+                  "properties": {
+                    "measurement_id": {
+                      "enum": [
+                        "vehicle_speed",
+                        "vehicle_position",
+                        "vehicle_heading",
+                        "traffic_flow",
+                        "traffic_density",
+                        "travel_time",
+                        "vehicle_count",
+                        "fuel_consumption",
+                        "battery_range",
+                        "route_delay"
+                      ]
+                    }
+                  }
+                }
+              ]
+            },
+            "context": { "$ref": "#/$defs/transportContext" }
+          },
+          "required": ["domain", "measurement", "context"]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "transportContext": {
+      "type": "object",
+      "properties": {
+        "vehicle_id": { "type": "string" },
+        "fleet_id": { "type": "string" },
+        "route_id": { "type": "string" },
+        "trip_id": { "type": "string" },
+        "vehicle_type": { "type": "string" },
+        "operator_id": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+
+    "networkEvent": {
+      "allOf": [
+        { "$ref": "#/$defs/eventCommon" },
+        {
+          "properties": {
+            "domain": { "const": "network" },
+            "measurement": {
+              "allOf": [
+                { "$ref": "#/$defs/measurement" },
+                {
+                  "properties": {
+                    "measurement_id": {
+                      "enum": [
+                        "latency",
+                        "packet_loss",
+                        "bandwidth",
+                        "throughput",
+                        "jitter",
+                        "connection_count",
+                        "signal_strength",
+                        "network_availability",
+                        "error_rate"
+                      ]
+                    }
+                  }
+                }
+              ]
+            },
+            "context": { "$ref": "#/$defs/networkContext" }
+          },
+          "required": ["domain", "measurement", "context"]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "networkContext": {
+      "type": "object",
+      "properties": {
+        "device_id": { "type": "string" },
+        "interface_id": { "type": "string" },
+        "network_id": { "type": "string" },
+        "source_address": { "type": "string" },
+        "destination_address": { "type": "string" },
+        "protocol": { "type": "string" },
+        "service_id": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+
+    "computingEvent": {
+      "allOf": [
+        { "$ref": "#/$defs/eventCommon" },
+        {
+          "properties": {
+            "domain": { "const": "computing" },
+            "measurement": {
+              "allOf": [
+                { "$ref": "#/$defs/measurement" },
+                {
+                  "properties": {
+                    "measurement_id": {
+                      "enum": [
+                        "cpu_usage",
+                        "memory_usage",
+                        "disk_usage",
+                        "disk_io",
+                        "gpu_usage",
+                        "gpu_memory_usage",
+                        "process_count",
+                        "thread_count",
+                        "application_latency",
+                        "inference_latency",
+                        "service_availability",
+                        "error_count"
+                      ]
+                    }
+                  }
+                }
+              ]
+            },
+            "context": { "$ref": "#/$defs/computingContext" }
+          },
+          "required": ["domain", "measurement", "context"]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "computingContext": {
+      "type": "object",
+      "properties": {
+        "host_id": { "type": "string" },
+        "process_id": { "type": "string" },
+        "application_id": { "type": "string" },
+        "service_name": { "type": "string" },
+        "runtime": { "type": "string" },
+        "environment": {
+          "enum": ["development", "testing", "staging", "production", "unknown"]
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "financialEvent": {
+      "allOf": [
+        { "$ref": "#/$defs/eventCommon" },
+        {
+          "properties": {
+            "domain": { "const": "financial" },
+            "measurement": {
+              "allOf": [
+                { "$ref": "#/$defs/measurement" },
+                {
+                  "properties": {
+                    "measurement_id": {
+                      "enum": [
+                        "asset_price",
+                        "bid_price",
+                        "ask_price",
+                        "trade_volume",
+                        "market_capitalisation",
+                        "exchange_rate",
+                        "yield",
+                        "volatility",
+                        "index_value",
+                        "transaction_value"
+                      ]
+                    }
+                  }
+                }
+              ]
+            },
+            "context": { "$ref": "#/$defs/financialContext" }
+          },
+          "required": ["domain", "measurement", "context"]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "financialContext": {
+      "type": "object",
+      "properties": {
+        "instrument_id": { "type": "string" },
+        "ticker": { "type": "string" },
+        "market": { "type": "string" },
+        "exchange": { "type": "string" },
+        "currency": {
+          "type": "string",
+          "pattern": "^[A-Z]{3}$"
+        },
+        "interval": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+
+    "economicEvent": {
+      "allOf": [
+        { "$ref": "#/$defs/eventCommon" },
+        {
+          "properties": {
+            "domain": { "const": "economic" },
+            "measurement": {
+              "allOf": [
+                { "$ref": "#/$defs/measurement" },
+                {
+                  "properties": {
+                    "measurement_id": {
+                      "enum": [
+                        "inflation_rate",
+                        "unemployment_rate",
+                        "gross_domestic_product",
+                        "interest_rate",
+                        "consumer_price_index",
+                        "producer_price_index",
+                        "trade_balance",
+                        "government_debt",
+                        "industrial_production",
+                        "consumer_confidence"
+                      ]
+                    }
+                  }
+                }
+              ]
+            },
+            "context": { "$ref": "#/$defs/economicContext" }
+          },
+          "required": ["domain", "measurement", "context"]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "economicContext": {
+      "type": "object",
+      "properties": {
+        "country_code": {
+          "type": "string",
+          "pattern": "^[A-Z]{2}$"
+        },
+        "region": { "type": "string" },
+        "period": { "type": "string" },
+        "seasonal_adjustment": {
+          "enum": ["adjusted", "not_adjusted", "not_applicable", "unknown"]
+        },
+        "methodology": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+
+    "businessEvent": {
+      "allOf": [
+        { "$ref": "#/$defs/eventCommon" },
+        {
+          "properties": {
+            "domain": { "const": "business" },
+            "measurement": {
+              "allOf": [
+                { "$ref": "#/$defs/measurement" },
+                {
+                  "properties": {
+                    "measurement_id": {
+                      "enum": [
+                        "revenue",
+                        "cost",
+                        "profit",
+                        "order_count",
+                        "customer_count",
+                        "conversion_rate",
+                        "inventory_level",
+                        "delivery_time",
+                        "customer_satisfaction",
+                        "operational_efficiency"
+                      ]
+                    }
+                  }
+                }
+              ]
+            },
+            "context": { "$ref": "#/$defs/businessContext" }
+          },
+          "required": ["domain", "measurement", "context"]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "businessContext": {
+      "type": "object",
+      "properties": {
+        "organisation_id": { "type": "string" },
+        "business_unit_id": { "type": "string" },
+        "site_id": { "type": "string" },
+        "product_id": { "type": "string" },
+        "currency": {
+          "type": "string",
+          "pattern": "^[A-Z]{3}$"
+        },
+        "aggregation_period": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+
+    "socialInformationEvent": {
+      "allOf": [
+        { "$ref": "#/$defs/eventCommon" },
+        {
+          "properties": {
+            "domain": { "const": "social_information" },
+            "measurement": {
+              "allOf": [
+                { "$ref": "#/$defs/measurement" },
+                {
+                  "properties": {
+                    "measurement_id": {
+                      "enum": [
+                        "mention_count",
+                        "topic_frequency",
+                        "sentiment_score",
+                        "information_volume",
+                        "engagement_count",
+                        "trend_velocity",
+                        "source_count",
+                        "event_frequency"
+                      ]
+                    }
+                  }
+                }
+              ]
+            },
+            "context": { "$ref": "#/$defs/socialInformationContext" }
+          },
+          "required": ["domain", "measurement", "context"]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "socialInformationContext": {
+      "type": "object",
+      "properties": {
+        "topic_id": { "type": "string" },
+        "source_platform": { "type": "string" },
+        "language": { "type": "string" },
+        "geographic_scope": { "type": "string" },
+        "collection_method": { "type": "string" },
+        "privacy_class": {
+          "enum": ["public", "aggregated", "restricted", "personal_data"]
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "audioEvent": {
+      "allOf": [
+        { "$ref": "#/$defs/eventCommon" },
+        {
+          "properties": {
+            "domain": { "const": "audio" },
+            "measurement": {
+              "allOf": [
+                { "$ref": "#/$defs/measurement" },
+                {
+                  "properties": {
+                    "measurement_id": {
+                      "enum": [
+                        "peak_amplitude",
+                        "rms_level",
+                        "loudness_lufs",
+                        "true_peak",
+                        "spectral_centroid",
+                        "spectral_bandwidth",
+                        "spectral_rolloff",
+                        "spectral_flatness",
+                        "zero_crossing_rate",
+                        "frequency_peak",
+                        "noise_floor",
+                        "stereo_width"
+                      ]
+                    }
+                  }
+                }
+              ]
+            },
+            "context": { "$ref": "#/$defs/audioContext" }
+          },
+          "required": ["domain", "measurement", "context"]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "audioContext": {
+      "type": "object",
+      "properties": {
+        "audio_file_id": { "type": "string" },
+        "session_id": { "type": "string" },
+        "track_id": { "type": "string" },
+        "sample_rate_hz": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "bit_depth": {
+          "type": "integer",
+          "enum": [8, 16, 24, 32, 64]
+        },
+        "channel_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "channel_layout": { "type": "string" },
+        "window_size_samples": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "fft_size": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "audio_offset_seconds": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "musicalEvent": {
+      "allOf": [
+        { "$ref": "#/$defs/eventCommon" },
+        {
+          "properties": {
+            "domain": { "const": "musical" },
+            "measurement": {
+              "allOf": [
+                { "$ref": "#/$defs/measurement" },
+                {
+                  "properties": {
+                    "measurement_id": {
+                      "enum": [
+                        "tempo_bpm",
+                        "beat_position",
+                        "onset_strength",
+                        "pitch_hz",
+                        "midi_note",
+                        "key_estimate",
+                        "time_signature",
+                        "chord_estimate",
+                        "rhythm_density",
+                        "note_velocity",
+                        "bar_position",
+                        "musical_section"
+                      ]
+                    }
+                  }
+                }
+              ]
+            },
+            "context": { "$ref": "#/$defs/musicalContext" }
+          },
+          "required": ["domain", "measurement", "context"]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "musicalContext": {
+      "type": "object",
+      "properties": {
+        "project_id": { "type": "string" },
+        "song_id": { "type": "string" },
+        "track_id": { "type": "string" },
+        "tempo_map_id": { "type": "string" },
+        "time_signature": { "type": "string" },
+        "key_signature": { "type": "string" },
+        "bar_number": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "beat_number": {
+          "type": "number",
+          "minimum": 0
+        },
+        "midi_channel": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "artificialIntelligenceEvent": {
+      "allOf": [
+        { "$ref": "#/$defs/eventCommon" },
+        {
+          "properties": {
+            "domain": { "const": "artificial_intelligence" },
+            "measurement": {
+              "allOf": [
+                { "$ref": "#/$defs/measurement" },
+                {
+                  "properties": {
+                    "measurement_id": {
+                      "enum": [
+                        "inference_latency",
+                        "token_count",
+                        "throughput",
+                        "model_accuracy",
+                        "precision",
+                        "recall",
+                        "f1_score",
+                        "training_loss",
+                        "validation_loss",
+                        "gpu_memory_usage",
+                        "model_confidence",
+                        "evaluation_error"
+                      ]
+                    }
+                  }
+                }
+              ]
+            },
+            "context": { "$ref": "#/$defs/artificialIntelligenceContext" }
+          },
+          "required": ["domain", "measurement", "context"]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "artificialIntelligenceContext": {
+      "type": "object",
+      "properties": {
+        "model_id": { "type": "string" },
+        "model_version": { "type": "string" },
+        "provider": { "type": "string" },
+        "task_type": { "type": "string" },
+        "dataset_id": { "type": "string" },
+        "evaluation_run_id": { "type": "string" },
+        "hardware": { "type": "string" },
+        "framework": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+
+    "securityEvent": {
+      "allOf": [
+        { "$ref": "#/$defs/eventCommon" },
+        {
+          "properties": {
+            "domain": { "const": "security" },
+            "measurement": {
+              "allOf": [
+                { "$ref": "#/$defs/measurement" },
+                {
+                  "properties": {
+                    "measurement_id": {
+                      "enum": [
+                        "failed_login_count",
+                        "successful_login_count",
+                        "security_alert_count",
+                        "threat_score",
+                        "vulnerability_count",
+                        "malware_detection_count",
+                        "intrusion_attempt_count",
+                        "firewall_block_count",
+                        "anomaly_score",
+                        "incident_severity"
+                      ]
+                    }
+                  }
+                }
+              ]
+            },
+            "context": { "$ref": "#/$defs/securityContext" }
+          },
+          "required": ["domain", "measurement", "context"]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "securityContext": {
+      "type": "object",
+      "properties": {
+        "asset_id": { "type": "string" },
+        "host_id": { "type": "string" },
+        "service_id": { "type": "string" },
+        "incident_id": { "type": "string" },
+        "alert_id": { "type": "string" },
+        "severity": {
+          "enum": ["informational", "low", "medium", "high", "critical"]
+        },
+        "threat_category": { "type": "string" },
+        "mitre_attack_id": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "schema_version": "1.0.0",
+  "timestamp": "2026-11-15T19:45:00Z",
+  "source": {
+    "id": "sensor_01",
+    "provider": "Test Org",
+    "connector_type": "sensor_stream"
+  },
+  "domain": "computing",
+  "data_type": "metric",
+  "payload": {
+    "metrics": {},
+    "units": {},
+    "context": {},
+    "raw_data": {
+      "cpu": 10
+    }
+  }
+}

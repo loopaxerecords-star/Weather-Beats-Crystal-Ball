@@ -1,0 +1,10 @@
+{
+  "timestamp": "2026-11-12T21:47:46.120Z",
+  "source_id": "host_macstudio_m3_01",
+  "domain": "computing",
+  "payload": {
+    "cpu_usage": 31.4,
+    "memory_usage": 58.2,
+    "unit": "%"
+  }
+}

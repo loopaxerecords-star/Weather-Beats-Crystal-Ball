@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "artificialIntelligence Telemetry Schema",
+  "allOf": [
+    {
+      "$ref": "#/$defs/eventCommon"
+    },
+    {
+      "properties": {
+        "domain": {
+          "const": "artificial_intelligence"
+        },
+        "measurement": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/measurement"
+            },
+            {
+              "properties": {
+                "measurement_id": {
+                  "enum": [
+                    "inference_latency",
+                    "token_count",
+                    "throughput",
+                    "model_accuracy",
+                    "precision",
+                    "recall",
+                    "f1_score",
+                    "training_loss",
+                    "validation_loss",
+                    "gpu_memory_usage",
+                    "model_confidence",
+                    "evaluation_error"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "context": {
+          "$ref": "#/$defs/artificialIntelligenceContext"
+        }
+      },
+      "required": [
+        "domain",
+        "measurement",
+        "context"
+      ]
+    }
+  ],
+  "unevaluatedProperties": false
+}

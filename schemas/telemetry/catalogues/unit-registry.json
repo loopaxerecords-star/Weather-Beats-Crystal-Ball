@@ -1,0 +1,45 @@
+{
+  "schema_version": "1.0.0",
+  "ucum_units": [
+    {
+      "id": "Cel",
+      "name": "Degree Celsius",
+      "symbol": "°C"
+    },
+    {
+      "id": "hPa",
+      "name": "Hectopascal",
+      "symbol": "hPa"
+    },
+    {
+      "id": "m/s",
+      "name": "Meter per second",
+      "symbol": "m/s"
+    },
+    {
+      "id": "ug/m3",
+      "name": "Microgram per cubic meter",
+      "symbol": "µg/m³"
+    },
+    {
+      "id": "kW",
+      "name": "Kilowatt",
+      "symbol": "kW"
+    },
+    {
+      "id": "Hz",
+      "name": "Hertz",
+      "symbol": "Hz"
+    },
+    {
+      "id": "dB",
+      "name": "Decibel",
+      "symbol": "dB"
+    },
+    {
+      "id": "LUFS",
+      "name": "Loudness Unit Full Scale",
+      "symbol": "LUFS"
+    }
+  ]
+}
