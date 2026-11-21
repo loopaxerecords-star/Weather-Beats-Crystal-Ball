@@ -7,6 +7,7 @@ import {
   normalizeMatchedDomain,
   parseTelemetryQuestionLocally
 } from './voiceTelemetryOracle';
+import { deriveWeatherVoiceStyle } from './aiIntelligenceSuite';
 
 export interface AiIntelligenceResponse {
   insight: string;
@@ -62,6 +63,7 @@ export async function queryVoiceTelemetryOracle(
   includeSpeech = true
 ): Promise<VoiceQueryResult> {
   const telemetrySummary = buildCompactTelemetrySummary(vector24, weatherCtx);
+  const weatherMood = deriveWeatherVoiceStyle(weatherCtx);
 
   try {
     const response = await fetch('/api/ai/voice-query', {
@@ -72,7 +74,8 @@ export async function queryVoiceTelemetryOracle(
       body: JSON.stringify({
         question,
         telemetrySummary,
-        includeSpeech
+        includeSpeech,
+        weatherMood
       })
     });
 

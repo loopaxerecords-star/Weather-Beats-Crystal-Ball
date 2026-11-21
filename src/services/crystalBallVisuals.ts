@@ -62,11 +62,11 @@ export const SINGULARITY_FRAGMENT_SHADER = `
 
     vec3 hotWhite = vec3(1.0, 0.98, 0.92);
     vec3 baseCol = mix(uColorPrimary, uColorAccent, plasma);
-    float coreHotspot = pow(facing, 1.7) * (0.65 + uEnergy * 0.6 + uBeatPulse * 0.55);
-    vec3 finalCol = mix(baseCol * (0.9 + uEnergy * 0.8), hotWhite, clamp(coreHotspot * 0.85, 0.0, 1.0));
-    finalCol += uColorAccent * pow(1.0 - facing, 2.2) * (0.75 + uBeatPulse * 0.8);
+    float coreHotspot = pow(facing, 1.9) * (0.55 + uEnergy * 0.48 + uBeatPulse * 0.36);
+    vec3 finalCol = mix(baseCol * (0.82 + uEnergy * 0.55), hotWhite, clamp(coreHotspot * 0.72, 0.0, 0.92));
+    finalCol += uColorAccent * pow(1.0 - facing, 2.3) * (0.52 + uBeatPulse * 0.45);
 
-    gl_FragColor = vec4(finalCol * (1.05 + uBeatPulse * 0.55), 0.96);
+    gl_FragColor = vec4(finalCol * (0.9 + uBeatPulse * 0.32), 0.95);
   }
 `;
 
@@ -187,9 +187,9 @@ export const AURA_FRAGMENT_SHADER = `
     float ndotv = abs(dot(viewDir, normalize(vNormal)));
     float haloRim = pow(clamp(1.0 - ndotv, 0.0, 1.0), 3.4);
     float shimmer = 0.88 + 0.12 * sin(uTime * 2.4 + vWorldPos.y * 5.0);
-    vec3 col = mix(uColorPrimary, uColorAccent, 0.35 + uBeatPulse * 0.35);
-    float alpha = haloRim * (0.34 + uEnergy * 0.36 + uBeatPulse * 0.35) * shimmer;
-    gl_FragColor = vec4(col * (1.2 + uBeatPulse * 0.6), clamp(alpha, 0.0, 0.78));
+    vec3 col = mix(uColorPrimary, uColorAccent, 0.32 + uBeatPulse * 0.25);
+    float alpha = haloRim * (0.19 + uEnergy * 0.21 + uBeatPulse * 0.18) * shimmer;
+    gl_FragColor = vec4(col * (0.94 + uBeatPulse * 0.3), clamp(alpha, 0.0, 0.54));
   }
 `;
 
@@ -205,8 +205,8 @@ const ARCANE_RUNE_GLYPHS = [
 ];
 
 export function createAstrolabeRuneRingTexture(
-  glowHex = '#fbbf24',
-  secondaryHex = '#38bdf8'
+  glowHex = '#ffffff',
+  secondaryHex = '#e0f2fe'
 ): THREE.CanvasTexture {
   const size = 1024;
   const canvas = document.createElement('canvas');
@@ -219,15 +219,15 @@ export function createAstrolabeRuneRingTexture(
     const cy = size / 2;
     ctx.clearRect(0, 0, size, size);
 
-    // Outer & inner arcane rings
+    // Outer & inner arcane rings (high-luminance so material.color shifts hue vividly)
     ctx.strokeStyle = glowHex;
-    ctx.lineWidth = 4;
+    ctx.lineWidth = 4.5;
     ctx.beginPath();
     ctx.arc(cx, cy, 488, 0, Math.PI * 2);
     ctx.stroke();
 
     ctx.strokeStyle = secondaryHex;
-    ctx.lineWidth = 2.5;
+    ctx.lineWidth = 2.8;
     ctx.beginPath();
     ctx.arc(cx, cy, 342, 0, Math.PI * 2);
     ctx.stroke();
@@ -236,9 +236,9 @@ export function createAstrolabeRuneRingTexture(
     for (let deg = 0; deg < 360; deg += 5) {
       const rad = (deg * Math.PI) / 180;
       const isMajor = deg % 15 === 0;
-      const rIn = isMajor ? 452 : 468;
+      const rIn = isMajor ? 450 : 468;
       const rOut = 486;
-      ctx.strokeStyle = isMajor ? glowHex : 'rgba(248, 250, 252, 0.5)';
+      ctx.strokeStyle = isMajor ? glowHex : 'rgba(255, 255, 255, 0.58)';
       ctx.lineWidth = isMajor ? 3 : 1.5;
       ctx.beginPath();
       ctx.moveTo(cx + Math.cos(rad) * rIn, cy + Math.sin(rad) * rIn);
@@ -246,9 +246,9 @@ export function createAstrolabeRuneRingTexture(
       ctx.stroke();
     }
 
-    // Glowing arcane glyphs around the band
+    // Luminous arcane glyphs around the band
     ctx.save();
-    ctx.font = '600 34px "Cinzel", Georgia, serif';
+    ctx.font = '600 36px "Cinzel", Georgia, serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     const glyphCount = 24;
@@ -262,8 +262,8 @@ export function createAstrolabeRuneRingTexture(
       ctx.translate(gx, gy);
       ctx.rotate(theta + Math.PI / 2);
       ctx.shadowColor = i % 2 === 0 ? glowHex : secondaryHex;
-      ctx.shadowBlur = 14;
-      ctx.fillStyle = i % 2 === 0 ? '#fef3c7' : '#e0f2fe';
+      ctx.shadowBlur = 16;
+      ctx.fillStyle = '#ffffff';
       ctx.fillText(ARCANE_RUNE_GLYPHS[i % ARCANE_RUNE_GLYPHS.length], 0, 0);
       ctx.restore();
     }

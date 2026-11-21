@@ -15,21 +15,46 @@ import {
   ChevronUp,
   Mic,
   MicOff,
+  AudioLines,
   Volume2,
   VolumeX,
   Send,
-  RotateCcw
+  RotateCcw,
+  Waves,
+  Radio,
+  Undo2,
+  Sparkles
 } from 'lucide-react';
 import { DomainCategory } from '../types/telemetry';
 import { ALL_DOMAINS_LIST, UNIVERSAL_DOMAINS } from '../services/domainRegistry';
 import { GeolocationWeatherContext, telemetryEngine } from '../services/telemetryEngine';
-import { audioDspEngine, SequencerPlaybackStatus } from '../services/audioDspEngine';
+import {
+  audioDspEngine,
+  createVoiceHighPass250Hz16dB,
+  LyriaFlowEngineState,
+  SequencerPlaybackStatus
+} from '../services/audioDspEngine';
 import {
   build32BarComposition,
   computeDomainVector24
 } from '../services/weatherBeatsComposer';
 import { queryVoiceTelemetryOracle } from '../services/geminiService';
 import { VoiceQueryResult } from '../services/voiceTelemetryOracle';
+import {
+  addSmartAlertRule,
+  classifyCrystalBallPrompt,
+  compileSmartAlertRule,
+  deriveWeatherVoiceStyle,
+  evaluateSmartAlertRules,
+  loadSmartAlertRules,
+  requestMusicalDirection,
+  SmartAlertRule,
+  subscribeSmartAlertRules
+} from '../services/aiIntelligenceSuite';
+import {
+  liveSeerVoiceClient,
+  LiveVoiceConnectionState
+} from '../services/liveSeerVoiceClient';
 import {
   SINGULARITY_VERTEX_SHADER,
   SINGULARITY_FRAGMENT_SHADER,
@@ -38,11 +63,27 @@ import {
   AURA_VERTEX_SHADER,
   AURA_FRAGMENT_SHADER,
   createAstrolabeRuneRingTexture,
-  createAltarMandalaTexture,
   createBrushedBrassRoughnessTexture,
   createSoftGlowSpriteTexture,
   updateArcSegmentsBuffer
 } from '../services/crystalBallVisuals';
+import {
+  CRYSTAL_BALL_POS_X,
+  CRYSTAL_BALL_POS_Y,
+  CRYSTAL_BALL_POS_Z,
+  CRYSTAL_BALL_SCALE,
+  SeerAnimationSignals,
+  StagedAnimationWeights,
+  buildFortuneTellerParlorRig,
+  computeStagedAnimationWeights
+} from '../services/fortuneTellerRig';
+import {
+  CelestialBackdropSignals,
+  TELEMETRY_ANOMALY_DEVIATION_THRESHOLD,
+  buildCelestialBackdropUi
+} from '../services/celestialBackdropUi';
+import { SeerWhisperEvent } from '../services/seerWhisperComposer';
+import { useMicAudioVisualizer } from '../hooks/useMicAudioVisualizer';
 
 interface CrystalBallExperienceProps {
   focusedDomain: 'all' | DomainCategory;
@@ -86,6 +127,7 @@ interface HoverReadout {
   normalizedPct: number;
   screenX: number;
   screenY: number;
+  isAnomaly?: boolean;
 }
 
 const DOMAIN_INDEX_MAP = new Map<DomainCategory, number>(
@@ -143,11 +185,19 @@ export const CrystalBallExperience: React.FC<CrystalBallExperienceProps> = ({
   const fallbackCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const typedInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Mic Capture & Orb Voice Playback Analyser Refs (Strictly separated to avoid feedback)
-  const micStreamRef = useRef<MediaStream | null>(null);
-  const micAudioCtxRef = useRef<AudioContext | null>(null);
-  const micAnalyserRef = useRef<AnalyserNode | null>(null);
-  const micBufferRef = useRef<Float32Array<ArrayBuffer>>(new Float32Array(new ArrayBuffer(256 * 4)));
+  // Dedicated live microphone audio-visualizer hook (strictly zero-feedback AnalyserNode)
+  const {
+    isActive: isMicVisualizerActive,
+    permissionError: micVisualizerError,
+    start: startMicVisualizer,
+    stop: stopMicVisualizer,
+    clearError: clearMicVisualizerError,
+    sampleMetrics: sampleMicMetrics
+  } = useMicAudioVisualizer();
+  const [isVisualizerPinned, setIsVisualizerPinned] = useState(false);
+  const isVisualizerPinnedRef = useRef(false);
+  isVisualizerPinnedRef.current = isVisualizerPinned;
+
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const transcriptDraftRef = useRef<string>('');
 
@@ -159,13 +209,23 @@ export const CrystalBallExperience: React.FC<CrystalBallExperienceProps> = ({
   const isSynthSpeakingRef = useRef<boolean>(false);
 
   const [webglFailed, setWebglFailed] = useState(false);
-  const [dockCollapsed, setDockCollapsed] = useState(false);
+  const [dockCollapsed, setDockCollapsed] = useState(true);
   const [weatherCtx, setWeatherCtx] = useState<GeolocationWeatherContext>(() =>
     telemetryEngine.getWeatherContext()
   );
   const [latestByDomain, setLatestByDomain] = useState(() => telemetryEngine.getLatestByDomain());
   const [seqStatus, setSeqStatus] = useState<SequencerPlaybackStatus>(() =>
     audioDspEngine.getSequencerStatus()
+  );
+  const [studioPrefsVersion, setStudioPrefsVersion] = useState(0);
+  const [ambientWhispersEnabled, setAmbientWhispersEnabled] = useState<boolean>(() =>
+    audioDspEngine.getAmbientWhispersEnabled()
+  );
+  const [lyriaState, setLyriaState] = useState<LyriaFlowEngineState>(() =>
+    audioDspEngine.getLyriaFlowState()
+  );
+  const [activeWhisper, setActiveWhisper] = useState<SeerWhisperEvent | null>(() =>
+    audioDspEngine.getActiveWhisper()
   );
   const [isSyncingWeather, setIsSyncingWeather] = useState(false);
   const [typedQuestion, setTypedQuestion] = useState('');
@@ -174,7 +234,15 @@ export const CrystalBallExperience: React.FC<CrystalBallExperienceProps> = ({
   const [micError, setMicError] = useState<string | null>(null);
   const [oracleLoading, setOracleLoading] = useState(false);
   const [oracleResult, setOracleResult] = useState<VoiceQueryResult | null>(null);
+  const [actionNotice, setActionNotice] = useState<string | null>(null);
   const [isSpeakingReply, setIsSpeakingReply] = useState(false);
+  const [liveVoiceState, setLiveVoiceState] = useState<LiveVoiceConnectionState>(() =>
+    liveSeerVoiceClient.getState()
+  );
+  const [liveVoiceError, setLiveVoiceError] = useState<string | null>(null);
+  const [smartAlertRules, setSmartAlertRules] = useState<SmartAlertRule[]>(() =>
+    loadSmartAlertRules()
+  );
   const [pulseTimestamp, setPulseTimestamp] = useState<number>(0);
   const [hoverReadout, setHoverReadout] = useState<HoverReadout | null>(null);
 
@@ -192,20 +260,53 @@ export const CrystalBallExperience: React.FC<CrystalBallExperienceProps> = ({
 
   // Refs synced cleanly into the WebGL render loop without tearing down the canvas
   const liveStateRef = useRef({
+    isPlayEngaged: false,
     energy: 0.36,
     bassEnergy: 0.25,
     micEnergy: 0,
+    micActive: false,
+    micBass: 0,
+    micMid: 0,
+    micTreble: 0,
+    micPeakHold: 0,
     speakingEnergy: 0,
     swirlSpeed: 0.45,
-    primaryHex: '#0ea5e9',
-    secondaryHex: '#6366f1',
-    accentHex: '#f59e0b',
+    primaryHex: '#5b8fa8',
+    secondaryHex: '#33416b',
+    accentHex: '#c9a66b',
+    runeOuterHex: '#c9a66b',
+    runeInnerHex: '#7fa8b8',
+    runeOpacityBoost: 0,
+    runeScaleBoost: 0,
     domainNorms: new Array(24).fill(0.5) as number[],
     domainColors: ALL_DOMAINS_LIST.map((d) => d.colorHex),
+    fftSpectrum32: new Float32Array(32),
     focusedIndex: -1,
     hoveredIndex: -1,
-    pulseAge: 10
+    pulseAge: 10,
+    pointerNdcX: 0,
+    pointerNdcY: 0
   });
+
+  // Keyboard shortcut 'H' to toggle hidden controls dock
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'h' && e.key !== 'H') return;
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      setDockCollapsed((prev) => !prev);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
 
   useEffect(() => {
     const unsubTel = telemetryEngine.subscribe(() => {
@@ -215,9 +316,26 @@ export const CrystalBallExperience: React.FC<CrystalBallExperienceProps> = ({
     const unsubSeq = audioDspEngine.subscribeSequencer((status) => {
       setSeqStatus(status);
     });
+    const unsubPrefs = audioDspEngine.subscribeStudioPreferences(() => {
+      setAmbientWhispersEnabled(audioDspEngine.getAmbientWhispersEnabled());
+      setStudioPrefsVersion((v) => v + 1);
+    });
+    const unsubWhisper = audioDspEngine.subscribeWhisper((evt) => {
+      setActiveWhisper(evt);
+    });
+    const unsubLyria = audioDspEngine.subscribeLyriaFlow((state) => {
+      setLyriaState(state);
+    });
+    const unsubAlerts = subscribeSmartAlertRules(() => {
+      setSmartAlertRules(loadSmartAlertRules());
+    });
     return () => {
       unsubTel();
       unsubSeq();
+      unsubPrefs();
+      unsubWhisper();
+      unsubLyria();
+      unsubAlerts();
     };
   }, []);
 
@@ -227,13 +345,35 @@ export const CrystalBallExperience: React.FC<CrystalBallExperienceProps> = ({
   );
 
   const compositionPlan = useMemo(
-    () => build32BarComposition(vector24, weatherCtx),
-    [vector24, weatherCtx]
+    () => build32BarComposition(vector24, weatherCtx, audioDspEngine.getCompositionOptions()),
+    [vector24, weatherCtx, studioPrefsVersion]
   );
+
+  const smartAlertEval = useMemo(
+    () => evaluateSmartAlertRules(smartAlertRules, { weather: weatherCtx, vector24 }),
+    [smartAlertRules, weatherCtx, vector24]
+  );
+
+  useEffect(() => {
+    audioDspEngine.setSmartAlertIntensityBias(smartAlertEval.activeIntensityBias);
+  }, [smartAlertEval.activeIntensityBias]);
+
+  const compositionPlanRef = useRef(compositionPlan);
+  compositionPlanRef.current = compositionPlan;
 
   useEffect(() => {
     audioDspEngine.updateCompositionPlan(compositionPlan);
   }, [compositionPlan]);
+
+  useEffect(() => {
+    audioDspEngine.setWhisperTelemetryContext(vector24, weatherCtx, focusedDomain);
+  }, [vector24, weatherCtx, focusedDomain]);
+
+  useEffect(() => {
+    audioDspEngine.setOracleSpeakingPriority(
+      isSpeakingReply || isListening || oracleLoading || liveVoiceState === 'connected'
+    );
+  }, [isSpeakingReply, isListening, oracleLoading, liveVoiceState]);
 
   const vector24Ref = useRef(vector24);
   vector24Ref.current = vector24;
@@ -253,25 +393,22 @@ export const CrystalBallExperience: React.FC<CrystalBallExperienceProps> = ({
     const sampleSignals = () => {
       const dsp = audioDspEngine.processBlock();
       const spectrum = dsp.fftSpectrum32;
+      const spectrumTarget = liveStateRef.current.fftSpectrum32;
       let fftSum = 0;
       let bassSum = 0;
       for (let i = 0; i < spectrum.length; i++) {
-        fftSum += spectrum[i];
-        if (i < 6) bassSum += spectrum[i];
+        const val = spectrum[i];
+        if (i < spectrumTarget.length) {
+          spectrumTarget[i] = val;
+        }
+        fftSum += val;
+        if (i < 6) bassSum += val;
       }
       const fftAvg = fftSum / Math.max(1, spectrum.length);
       const bassAvg = bassSum / 6;
 
-      let micRms = 0;
-      if (micAnalyserRef.current) {
-        const buf = micBufferRef.current;
-        micAnalyserRef.current.getFloatTimeDomainData(buf);
-        let sq = 0;
-        for (let i = 0; i < buf.length; i++) {
-          sq += buf[i] * buf[i];
-        }
-        micRms = Math.min(1, Math.sqrt(sq / buf.length) * 5.2);
-      }
+      const mic = sampleMicMetrics();
+      const micRms = mic.active ? mic.rms : 0;
 
       let speakRms = 0;
       if (speechAnalyserRef.current && speechSourceRef.current) {
@@ -292,34 +429,66 @@ export const CrystalBallExperience: React.FC<CrystalBallExperienceProps> = ({
       const solarNorm = vector24.solar.normalized;
 
       const selectedMeta = focusedDomain === 'all' ? null : UNIVERSAL_DOMAINS[focusedDomain];
-      const primaryHex = selectedMeta
-        ? selectedMeta.colorHex
-        : tempNorm > 0.58
-          ? '#0ea5e9'
-          : '#06b6d4';
-      const secondaryHex = selectedMeta ? '#4f46e5' : solarNorm > 0.55 ? '#6d28d9' : '#1d4ed8';
-      const accentHex = selectedMeta
-        ? '#fbbf24'
+      const alertTint = smartAlertEval.activeOrbTintHex;
+      const basePrimaryHex =
+        alertTint ??
+        (selectedMeta
+          ? selectedMeta.colorHex
+          : tempNorm > 0.58
+            ? '#4f89a8'
+            : '#4a8a9c');
+      const baseSecondaryHex = selectedMeta ? '#3b3c6e' : solarNorm > 0.55 ? '#4c3473' : '#263f6e';
+      const baseAccentHex = selectedMeta
+        ? '#c9a66b'
         : tempNorm > 0.55
-          ? '#f59e0b'
-          : '#7dd3fc';
+          ? '#c79b5c'
+          : '#8fb4c9';
 
-      const voiceEnergyBoost = Math.max(micRms * 0.72, speakRms * 0.85);
-      liveStateRef.current.micEnergy = micRms;
-      liveStateRef.current.speakingEnergy = speakRms;
+      const micColorDriven = mic.active && (mic.intensity > 0.035 || mic.peakHold > 0.05);
+      const primaryHex = micColorDriven ? mic.nebulaPrimaryHex : basePrimaryHex;
+      const secondaryHex = micColorDriven ? mic.nebulaSecondaryHex : baseSecondaryHex;
+      const accentHex = micColorDriven ? mic.nebulaAccentHex : baseAccentHex;
+      const runeOuterHex = micColorDriven ? mic.runeOuterHex : baseAccentHex;
+      const runeInnerHex = micColorDriven ? mic.runeInnerHex : basePrimaryHex;
+
+      const whisperEnv = audioDspEngine.getWhisperEnvelopeEnergy();
+      const liveVoiceEnv = liveSeerVoiceClient.getLiveVoiceEnergy();
+      const combinedSpeakRms = Math.min(1, Math.max(speakRms, whisperEnv * 0.9, liveVoiceEnv));
+
+      const voiceEnergyBoost = Math.max(mic.intensity * 0.65, micRms * 0.55, combinedSpeakRms * 0.65);
+      liveStateRef.current.isPlayEngaged =
+        seqStatus.isPlaying || liveVoiceState === 'connected' || isSpeakingReply;
+      liveStateRef.current.micActive = mic.active;
+      liveStateRef.current.micEnergy = Math.max(micRms, mic.intensity);
+      liveStateRef.current.micBass = mic.bass;
+      liveStateRef.current.micMid = mic.mid;
+      liveStateRef.current.micTreble = mic.treble;
+      liveStateRef.current.micPeakHold = mic.peakHold;
+      liveStateRef.current.speakingEnergy = combinedSpeakRms;
       liveStateRef.current.bassEnergy = Math.min(
         1,
-        bassAvg * 2.8 + (seqStatus.isPlaying ? 0.25 : 0) + speakRms * 0.5
+        bassAvg * 2.2 +
+          mic.bass * 0.72 +
+          (seqStatus.isPlaying ? 0.18 : 0) +
+          combinedSpeakRms * 0.35
       );
       liveStateRef.current.energy = Math.min(
         1,
-        0.24 + fftAvg * 2.5 + voiceEnergyBoost + (seqStatus.isPlaying ? 0.24 : 0)
+        0.22 + fftAvg * 1.9 + voiceEnergyBoost + (seqStatus.isPlaying ? 0.2 : 0)
       );
       liveStateRef.current.swirlSpeed =
-        0.26 + windNorm * 0.65 + vector24.space.normalized * 0.35 + voiceEnergyBoost * 0.85;
+        0.22 +
+        windNorm * 0.52 +
+        vector24.space.normalized * 0.28 +
+        mic.swirlBoost * 0.6 +
+        combinedSpeakRms * 0.45;
       liveStateRef.current.primaryHex = primaryHex;
       liveStateRef.current.secondaryHex = secondaryHex;
       liveStateRef.current.accentHex = accentHex;
+      liveStateRef.current.runeOuterHex = runeOuterHex;
+      liveStateRef.current.runeInnerHex = runeInnerHex;
+      liveStateRef.current.runeOpacityBoost = mic.active ? mic.runeOpacityBoost * 0.55 : 0;
+      liveStateRef.current.runeScaleBoost = mic.active ? mic.runeScaleBoost * 0.55 : 0;
       liveStateRef.current.domainNorms = ALL_DOMAINS_LIST.map((d) => vector24[d.id].normalized);
       liveStateRef.current.focusedIndex =
         focusedDomain === 'all' ? -1 : (DOMAIN_INDEX_MAP.get(focusedDomain) ?? -1);
@@ -330,7 +499,17 @@ export const CrystalBallExperience: React.FC<CrystalBallExperienceProps> = ({
 
     rafId = requestAnimationFrame(sampleSignals);
     return () => cancelAnimationFrame(rafId);
-  }, [vector24, weatherCtx, focusedDomain, seqStatus.isPlaying, pulseTimestamp]);
+  }, [
+    vector24,
+    weatherCtx,
+    focusedDomain,
+    seqStatus.isPlaying,
+    liveVoiceState,
+    isSpeakingReply,
+    smartAlertEval.activeOrbTintHex,
+    pulseTimestamp,
+    sampleMicMetrics
+  ]);
 
   const stopSpeechPlayback = useCallback(() => {
     if (speechSourceRef.current) {
@@ -359,10 +538,25 @@ export const CrystalBallExperience: React.FC<CrystalBallExperienceProps> = ({
     if (!voiceEnabledRef.current || !text.trim()) return;
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
     try {
+      audioDspEngine.setOracleSpeakingPriority(true);
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = 0.98;
+      const voices = window.speechSynthesis.getVoices();
+      const english = voices.filter((v) => /^en\b/i.test(v.lang));
+      const preferredVoice =
+        english.find((v) =>
+          /samantha|serena|victoria|karen|moira|aria|natural|female|google uk english female/i.test(
+            v.name
+          )
+        ) ??
+        english[0] ??
+        voices[0];
+      if (preferredVoice) {
+        utterance.voice = preferredVoice;
+      }
+      utterance.rate = 0.96;
       utterance.pitch = 0.96;
+      utterance.volume = 0.36;
       utterance.onstart = () => {
         isSynthSpeakingRef.current = true;
         setIsSpeakingReply(true);
@@ -388,6 +582,7 @@ export const CrystalBallExperience: React.FC<CrystalBallExperienceProps> = ({
     async (result: VoiceQueryResult) => {
       stopSpeechPlayback();
       if (!voiceEnabledRef.current || !result.answerText) return;
+      audioDspEngine.setOracleSpeakingPriority(true);
 
       if (result.audioBase64Wav) {
         try {
@@ -396,10 +591,86 @@ export const CrystalBallExperience: React.FC<CrystalBallExperienceProps> = ({
             (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
           if (AudioCtx) {
             if (!speechAudioCtxRef.current) {
-              speechAudioCtxRef.current = new AudioCtx();
-              const analyser = speechAudioCtxRef.current.createAnalyser();
+              const ctx = new AudioCtx();
+              speechAudioCtxRef.current = ctx;
+              const analyser = ctx.createAnalyser();
               analyser.fftSize = 256;
-              analyser.connect(speechAudioCtxRef.current.destination);
+
+              const presenceEq = ctx.createBiquadFilter();
+              presenceEq.type = 'peaking';
+              presenceEq.frequency.value = 2750;
+              presenceEq.Q.value = 1.0;
+              presenceEq.gain.value = 3.5;
+
+              const voiceBoost = ctx.createGain();
+              voiceBoost.gain.value = 0.59;
+
+              // Ethereal Stereo Ping-Pong Oracle Vocal Delay (3:2 warm damped repeats)
+              const delayHp = ctx.createBiquadFilter();
+              delayHp.type = 'highpass';
+              delayHp.frequency.value = 340;
+
+              const delayL = ctx.createDelay(1.2);
+              const delayR = ctx.createDelay(1.2);
+              delayL.delayTime.value = 0.31;
+              delayR.delayTime.value = 0.465;
+
+              const dampL = ctx.createBiquadFilter();
+              dampL.type = 'lowpass';
+              dampL.frequency.value = 2400;
+              const dampR = ctx.createBiquadFilter();
+              dampR.type = 'lowpass';
+              dampR.frequency.value = 2150;
+
+              const fbL = ctx.createGain();
+              const fbR = ctx.createGain();
+              fbL.gain.value = 0.3;
+              fbR.gain.value = 0.28;
+
+              const wetGain = ctx.createGain();
+              wetGain.gain.value = 0.28;
+
+              const safetyLimiter = ctx.createDynamicsCompressor();
+              safetyLimiter.threshold.value = -2.0;
+              safetyLimiter.knee.value = 3;
+              safetyLimiter.ratio.value = 14;
+              safetyLimiter.attack.value = 0.002;
+              safetyLimiter.release.value = 0.08;
+
+              // 250 Hz 16 dB/oct voice high-pass filter before vocal presence EQ
+              const voiceHp = createVoiceHighPass250Hz16dB(ctx);
+
+              analyser.connect(voiceHp.input);
+              voiceHp.output.connect(presenceEq);
+              presenceEq.connect(voiceBoost);
+              voiceBoost.connect(safetyLimiter);
+
+              // Parallel ping-pong vocal delay path
+              voiceBoost.connect(delayHp);
+              delayHp.connect(delayL);
+              delayL.connect(dampL);
+              dampL.connect(fbL);
+              fbL.connect(delayR);
+              delayR.connect(dampR);
+              dampR.connect(fbR);
+              fbR.connect(delayL);
+
+              if (typeof ctx.createStereoPanner === 'function') {
+                const panL = ctx.createStereoPanner();
+                const panR = ctx.createStereoPanner();
+                panL.pan.value = -0.66;
+                panR.pan.value = 0.66;
+                dampL.connect(panL);
+                dampR.connect(panR);
+                panL.connect(wetGain);
+                panR.connect(wetGain);
+              } else {
+                dampL.connect(wetGain);
+                dampR.connect(wetGain);
+              }
+              wetGain.connect(safetyLimiter);
+
+              safetyLimiter.connect(ctx.destination);
               speechAnalyserRef.current = analyser;
             }
             const ctx = speechAudioCtxRef.current;
@@ -436,6 +707,7 @@ export const CrystalBallExperience: React.FC<CrystalBallExperienceProps> = ({
         try {
           const mime = result.audioMimeType || 'audio/wav';
           const audio = new Audio(`data:${mime};base64,${result.audioBase64Wav}`);
+          audio.volume = 0.36;
           speechFallbackAudioRef.current = audio;
           audio.onplay = () => {
             isSynthSpeakingRef.current = true;
@@ -488,10 +760,31 @@ export const CrystalBallExperience: React.FC<CrystalBallExperienceProps> = ({
       if (!cleaned) return;
 
       setOracleLoading(true);
+      setActionNotice(null);
       setPulseTimestamp(Date.now());
       audioDspEngine.auditionNativeVoice('kora', compositionPlan);
 
       try {
+        const intent = classifyCrystalBallPrompt(cleaned);
+        if (intent === 'music_direction') {
+          const patch = await requestMusicalDirection(cleaned, {
+            bpm: compositionPlan.bpm,
+            telemetrySignature: compositionPlan.telemetrySignatureLabel,
+            activeHour: `${compositionPlan.activeTelemetryHour.hourLabel} ${compositionPlan.activeTelemetryHour.mapping.instrument}`,
+            scaleName: compositionPlan.scaleName,
+            voiceMix: audioDspEngine.getVoiceMix()
+          });
+          audioDspEngine.applyMusicalDirectorPatch(patch);
+          setActionNotice(`Mix updated: ${patch.summary}`);
+          return;
+        }
+        if (intent === 'smart_alert') {
+          const compiled = await compileSmartAlertRule(cleaned);
+          addSmartAlertRule(compiled);
+          setActionNotice(`Smart alert armed: ${compiled.label} (${compiled.summary})`);
+          return;
+        }
+
         const result = await queryVoiceTelemetryOracle(
           cleaned,
           vector24,
@@ -505,12 +798,34 @@ export const CrystalBallExperience: React.FC<CrystalBallExperienceProps> = ({
         if (voiceReplyEnabled) {
           await playVoiceReply(result);
         }
+      } catch (err) {
+        setActionNotice(err instanceof Error ? err.message : 'Request could not be completed.');
       } finally {
         setOracleLoading(false);
       }
     },
     [compositionPlan, vector24, weatherCtx, voiceReplyEnabled, playVoiceReply]
   );
+
+  const handleToggleLiveVoice = useCallback(async () => {
+    setLiveVoiceError(null);
+    if (liveSeerVoiceClient.isActive()) {
+      liveSeerVoiceClient.disconnect();
+      setLiveVoiceState('idle');
+      return;
+    }
+    stopSpeechPlayback();
+    const summary = `${weatherCtx.region}, ${weatherCtx.temperatureC.toFixed(1)}C, wind ${weatherCtx.windSpeedMs} m/s, AQI ${weatherCtx.aqi}, ${compositionPlan.telemetrySignatureLabel}, hour ${compositionPlan.activeTelemetryHour.hourLabel} featuring ${compositionPlan.activeTelemetryHour.mapping.instrument}.`;
+    await liveSeerVoiceClient.connect(summary, deriveWeatherVoiceStyle(weatherCtx), {
+      onStateChange: (nextState, errMsg) => {
+        setLiveVoiceState(nextState);
+        if (errMsg) setLiveVoiceError(errMsg);
+      },
+      onOutputTranscript: (text) => {
+        if (text.trim()) setActionNotice(`Seer: ${text.trim()}`);
+      }
+    });
+  }, [weatherCtx, compositionPlan, stopSpeechPlayback]);
 
   const submitOracleRef = useRef(submitOracleQuestion);
   submitOracleRef.current = submitOracleQuestion;
@@ -524,17 +839,31 @@ export const CrystalBallExperience: React.FC<CrystalBallExperienceProps> = ({
       }
       recognitionRef.current = null;
     }
-    if (micStreamRef.current) {
-      micStreamRef.current.getTracks().forEach((track) => track.stop());
-      micStreamRef.current = null;
-    }
-    micAnalyserRef.current = null;
-    if (micAudioCtxRef.current) {
-      micAudioCtxRef.current.close().catch(() => {});
-      micAudioCtxRef.current = null;
+    if (!isVisualizerPinnedRef.current) {
+      stopMicVisualizer();
     }
     setIsListening(false);
-  }, []);
+  }, [stopMicVisualizer]);
+
+  const handleToggleMicVisualizer = useCallback(async () => {
+    setMicError(null);
+    clearMicVisualizerError();
+    if (isVisualizerPinnedRef.current) {
+      setIsVisualizerPinned(false);
+      isVisualizerPinnedRef.current = false;
+      if (!recognitionRef.current) {
+        stopMicVisualizer();
+      }
+      return;
+    }
+
+    const started = await startMicVisualizer();
+    if (started) {
+      setIsVisualizerPinned(true);
+      isVisualizerPinnedRef.current = true;
+      setPulseTimestamp(Date.now());
+    }
+  }, [clearMicVisualizerError, startMicVisualizer, stopMicVisualizer]);
 
   const handleToggleListening = useCallback(async () => {
     if (isListening) {
@@ -549,31 +878,14 @@ export const CrystalBallExperience: React.FC<CrystalBallExperienceProps> = ({
     }
 
     setMicError(null);
+    clearMicVisualizerError();
     setLiveTranscript('');
     transcriptDraftRef.current = '';
     stopSpeechPlayback();
     setDockCollapsed(false);
 
-    try {
-      if (navigator.mediaDevices?.getUserMedia) {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        micStreamRef.current = stream;
-
-        const AudioCtx =
-          window.AudioContext ||
-          (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-        if (AudioCtx) {
-          const ctx = new AudioCtx();
-          const source = ctx.createMediaStreamSource(stream);
-          const analyser = ctx.createAnalyser();
-          analyser.fftSize = 256;
-          // Connect strictly to AnalyserNode (NOT destination) to prevent acoustic speaker feedback
-          source.connect(analyser);
-          micAudioCtxRef.current = ctx;
-          micAnalyserRef.current = analyser;
-        }
-      }
-    } catch {
+    const micReady = await startMicVisualizer();
+    if (!micReady) {
       setMicError('Microphone blocked or unavailable. Type a question below.');
       typedInputRef.current?.focus();
       return;
@@ -647,7 +959,13 @@ export const CrystalBallExperience: React.FC<CrystalBallExperienceProps> = ({
       setMicError('Could not start speech recognition. Type your question below.');
       typedInputRef.current?.focus();
     }
-  }, [isListening, stopMicrophoneCapture, stopSpeechPlayback]);
+  }, [
+    isListening,
+    clearMicVisualizerError,
+    startMicVisualizer,
+    stopMicrophoneCapture,
+    stopSpeechPlayback
+  ]);
 
   const prevVoiceNonceRef = useRef(voiceTriggerNonce);
   useEffect(() => {
@@ -661,6 +979,7 @@ export const CrystalBallExperience: React.FC<CrystalBallExperienceProps> = ({
     return () => {
       stopMicrophoneCapture();
       stopSpeechPlayback();
+      liveSeerVoiceClient.disconnect();
       if (speechAudioCtxRef.current) {
         speechAudioCtxRef.current.close().catch(() => {});
         speechAudioCtxRef.current = null;
@@ -713,7 +1032,7 @@ export const CrystalBallExperience: React.FC<CrystalBallExperienceProps> = ({
 
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.08;
+    renderer.toneMappingExposure = 0.98;
     renderer.setPixelRatio(isSoftwareGl ? 1 : Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = !isSoftwareGl;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -723,8 +1042,8 @@ export const CrystalBallExperience: React.FC<CrystalBallExperienceProps> = ({
     renderer.setSize(width, height, false);
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color('#05070e');
-    scene.fog = new THREE.FogExp2('#05070e', 0.046);
+    scene.background = new THREE.Color('#0a0d14');
+    scene.fog = new THREE.FogExp2('#0a0d14', 0.044);
 
     const pmremGenerator = new THREE.PMREMGenerator(renderer);
     const roomEnv = new RoomEnvironment();
@@ -734,17 +1053,19 @@ export const CrystalBallExperience: React.FC<CrystalBallExperienceProps> = ({
     pmremGenerator.dispose();
 
     const camera = new THREE.PerspectiveCamera(40, width / height, 0.1, 100);
-    camera.position.set(0, 0.95, 7.15);
+    camera.position.set(0, 1.18, 5.75);
 
     const controls = new OrbitControls(camera, canvas);
     controls.enablePan = false;
     controls.enableDamping = !isSoftwareGl;
     controls.dampingFactor = 0.06;
-    controls.minDistance = 4.0;
-    controls.maxDistance = 10.6;
-    controls.minPolarAngle = Math.PI * 0.18;
-    controls.maxPolarAngle = Math.PI * 0.62;
-    controls.target.set(0, -0.05, 0);
+    controls.minDistance = 3.2;
+    controls.maxDistance = 8.8;
+    controls.minPolarAngle = Math.PI * 0.24;
+    controls.maxPolarAngle = Math.PI * 0.56;
+    controls.minAzimuthAngle = -0.68;
+    controls.maxAzimuthAngle = 0.68;
+    controls.target.set(0, 0.16, -0.05);
     controls.update();
 
     let composer: EffectComposer | null = null;
@@ -754,16 +1075,17 @@ export const CrystalBallExperience: React.FC<CrystalBallExperienceProps> = ({
       composer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       composer.setSize(width, height);
       composer.addPass(new RenderPass(scene, camera));
-      bloomPass = new UnrealBloomPass(new THREE.Vector2(width, height), 0.58, 0.52, 0.72);
+      // Ultra-subtle natural candlelight bloom (zero neon glow flashing)
+      bloomPass = new UnrealBloomPass(new THREE.Vector2(width, height), 0.05, 0.25, 0.97);
       composer.addPass(bloomPass);
       composer.addPass(new OutputPass());
     }
 
-    // Warm/Cool Studio Observatory Lighting Rig
-    const hemiLight = new THREE.HemisphereLight('#7dd3fc', '#0f172a', 0.78);
+    // Warm/Cool Parlor Observatory Lighting Rig (Restrained Candlelit Brass & Soft Moonlight)
+    const hemiLight = new THREE.HemisphereLight('#94a3b8', '#0f172a', 0.62);
     scene.add(hemiLight);
 
-    const keyLight = new THREE.DirectionalLight('#fff5e1', 2.4);
+    const keyLight = new THREE.DirectionalLight('#fff5e1', 2.15);
     keyLight.position.set(4.5, 6.5, 4.2);
     keyLight.castShadow = !isSoftwareGl;
     keyLight.shadow.mapSize.set(1024, 1024);
@@ -775,49 +1097,32 @@ export const CrystalBallExperience: React.FC<CrystalBallExperienceProps> = ({
     keyLight.shadow.normalBias = 0.02;
     scene.add(keyLight);
 
-    const rimLight = new THREE.DirectionalLight('#38bdf8', 1.85);
+    const rimLight = new THREE.DirectionalLight('#94a3b8', 0.92);
     rimLight.position.set(-4.8, 3.6, -4.6);
     scene.add(rimLight);
 
-    const brassBounceLight = new THREE.PointLight('#f59e0b', 1.6, 8, 2);
-    brassBounceLight.position.set(0, -0.55, 1.3);
+    const brassBounceLight = new THREE.PointLight('#d97706', 1.1, 8, 2);
+    brassBounceLight.position.set(0, -0.42, 1.55);
     scene.add(brassBounceLight);
-
-    const corePointLight = new THREE.PointLight('#38bdf8', 2.8, 10, 2);
-    corePointLight.position.set(0, 0.35, 0);
-    scene.add(corePointLight);
 
     // Procedural Canvas Textures
     const maxAniso = renderer.capabilities.getMaxAnisotropy();
-    const altarTex = createAltarMandalaTexture();
-    altarTex.anisotropy = maxAniso;
-    const runeTexPrimary = createAstrolabeRuneRingTexture('#fbbf24', '#38bdf8');
+    const runeTexPrimary = createAstrolabeRuneRingTexture('#ffffff', '#e0f2fe');
     runeTexPrimary.anisotropy = maxAniso;
-    const runeTexSecondary = createAstrolabeRuneRingTexture('#38bdf8', '#a855f7');
+    const runeTexSecondary = createAstrolabeRuneRingTexture('#f8fafc', '#bae6fd');
     runeTexSecondary.anisotropy = maxAniso;
     const brassRoughTex = createBrushedBrassRoughnessTexture();
     const glowSpriteTex = createSoftGlowSpriteTexture();
 
-    // Composite Celestial Brass Astrolabe Observatory
+    // Composite Celestial Brass Astrolabe Crystal Ball (scaled 0.62x flush on velvet parlor table)
     const orbAssembly = new THREE.Group();
+    orbAssembly.scale.setScalar(CRYSTAL_BALL_SCALE);
+    orbAssembly.position.set(CRYSTAL_BALL_POS_X, CRYSTAL_BALL_POS_Y, CRYSTAL_BALL_POS_Z);
     scene.add(orbAssembly);
 
-    // 1. Etched Obsidian & Inlaid Brass Altar Floor Disc
-    const floorGeo = new THREE.CircleGeometry(5.6, 64);
-    const floorMat = new THREE.MeshStandardMaterial({
-      color: '#ffffff',
-      map: altarTex,
-      roughness: 0.72,
-      metalness: 0.25,
-      polygonOffset: true,
-      polygonOffsetFactor: 1,
-      polygonOffsetUnits: 1
-    });
-    const floorMesh = new THREE.Mesh(floorGeo, floorMat);
-    floorMesh.rotation.x = -Math.PI / 2;
-    floorMesh.position.y = -1.78;
-    floorMesh.receiveShadow = true;
-    orbAssembly.add(floorMesh);
+    const corePointLight = new THREE.PointLight('#7dd3fc', 1.75, 8.5, 2);
+    corePointLight.position.set(0, 0.35, 0);
+    orbAssembly.add(corePointLight);
 
     // 2. Sculpted Multi-Tiered Obsidian & Brushed Bronze Pedestal (LatheGeometry)
     const plinthPoints = [
@@ -861,6 +1166,26 @@ export const CrystalBallExperience: React.FC<CrystalBallExperienceProps> = ({
       clearcoat: 0.5
     });
 
+    // Hooded Celestial Seer, Velvet-Draped Parlor Table, Flickering Candles & Tarot Cards
+    const parlorRig = buildFortuneTellerParlorRig({
+      maxAnisotropy: maxAniso,
+      isSoftwareGl,
+      brassMat,
+      goldMat,
+      glowSpriteTex
+    });
+    scene.add(parlorRig.group);
+
+    // Behind-the-Orb 3D Celestial 24-Domain Telemetry Arch, Anomaly Markers & 32-Band Audio Halo
+    const celestialBackdropUi = buildCelestialBackdropUi({
+      maxAnisotropy: maxAniso,
+      isSoftwareGl,
+      brassMat,
+      goldMat,
+      glowSpriteTex
+    });
+    scene.add(celestialBackdropUi.group);
+
     const collarGeo = new THREE.TorusGeometry(1.08, 0.06, 20, 64);
     const collarMesh = new THREE.Mesh(collarGeo, brassMat);
     collarMesh.rotation.x = Math.PI / 2;
@@ -878,10 +1203,10 @@ export const CrystalBallExperience: React.FC<CrystalBallExperienceProps> = ({
     const clawGeometries: THREE.BufferGeometry[] = [];
     const clawGemMat = new THREE.MeshStandardMaterial({
       color: '#fde68a',
-      emissive: '#f59e0b',
-      emissiveIntensity: 1.5,
-      roughness: 0.12,
-      metalness: 0.3
+      emissive: '#d97706',
+      emissiveIntensity: 0.72,
+      roughness: 0.16,
+      metalness: 0.35
     });
     const clawGemGeo = new THREE.OctahedronGeometry(0.082, 0);
 
@@ -923,9 +1248,10 @@ export const CrystalBallExperience: React.FC<CrystalBallExperienceProps> = ({
 
     const runeRingOuterGeo = new THREE.RingGeometry(1.66, 2.18, 96);
     const runeRingOuterMat = new THREE.MeshBasicMaterial({
+      color: new THREE.Color('#d97706'),
       map: runeTexPrimary,
       transparent: true,
-      opacity: 0.85,
+      opacity: 0.36,
       side: THREE.DoubleSide,
       depthWrite: false,
       blending: THREE.AdditiveBlending
@@ -938,9 +1264,10 @@ export const CrystalBallExperience: React.FC<CrystalBallExperienceProps> = ({
 
     const runeRingInnerGeo = new THREE.RingGeometry(1.38, 1.72, 96);
     const runeRingInnerMat = new THREE.MeshBasicMaterial({
+      color: new THREE.Color('#7dd3fc'),
       map: runeTexSecondary,
       transparent: true,
-      opacity: 0.72,
+      opacity: 0.3,
       side: THREE.DoubleSide,
       depthWrite: false,
       blending: THREE.AdditiveBlending
@@ -1039,7 +1366,7 @@ export const CrystalBallExperience: React.FC<CrystalBallExperienceProps> = ({
     const arcMat = new THREE.LineBasicMaterial({
       color: '#bae6fd',
       transparent: true,
-      opacity: 0.78,
+      opacity: 0.38,
       blending: THREE.AdditiveBlending,
       depthWrite: false
     });
@@ -1097,10 +1424,10 @@ export const CrystalBallExperience: React.FC<CrystalBallExperienceProps> = ({
     const moteGeo = new THREE.OctahedronGeometry(0.068, 0);
     const moteMat = new THREE.MeshStandardMaterial({
       color: '#ffffff',
-      roughness: 0.16,
-      metalness: 0.55,
+      roughness: 0.22,
+      metalness: 0.58,
       emissive: '#38bdf8',
-      emissiveIntensity: 1.05
+      emissiveIntensity: 0.48
     });
     const moteCount = 24;
     const motesInstanced = new THREE.InstancedMesh(moteGeo, moteMat, moteCount);
@@ -1120,14 +1447,14 @@ export const CrystalBallExperience: React.FC<CrystalBallExperienceProps> = ({
     const domeWireGeo = new THREE.WireframeGeometry(domeGeo);
     domeGeo.dispose();
     const domeMat = new THREE.LineBasicMaterial({
-      color: '#38bdf8',
+      color: '#64748b',
       transparent: true,
-      opacity: 0.085,
+      opacity: 0.048,
       depthWrite: false
     });
     const domeWire = new THREE.LineSegments(domeWireGeo, domeMat);
     domeWire.position.y = 0.65;
-    orbAssembly.add(domeWire);
+    scene.add(domeWire);
 
     const constellationPositions = new Float32Array((moteCount + 1) * 6);
     const constellationGeo = new THREE.BufferGeometry();
@@ -1136,9 +1463,9 @@ export const CrystalBallExperience: React.FC<CrystalBallExperienceProps> = ({
       new THREE.BufferAttribute(constellationPositions, 3)
     );
     const constellationMat = new THREE.LineBasicMaterial({
-      color: '#7dd3fc',
+      color: '#94a3b8',
       transparent: true,
-      opacity: 0.32,
+      opacity: 0.18,
       blending: THREE.AdditiveBlending,
       depthWrite: false
     });
@@ -1176,10 +1503,18 @@ export const CrystalBallExperience: React.FC<CrystalBallExperienceProps> = ({
       renderer.compile(scene, camera);
     }
 
-    // Raycasting Hover & Click Inspection across the 24 Orbital Domain Gems
+    // Ensure orbAssembly world matrix is computed for accurate scaled world-space gem projection
+    orbAssembly.updateMatrixWorld(true);
+
+    // Unified Raycasting Hover & Click Inspection across Orbital Gems & Behind-the-Orb Telemetry Arch
+    const raycastTargets: THREE.Object3D[] = [
+      motesInstanced,
+      celestialBackdropUi.interactiveNodesMesh
+    ];
     let pointerDownX = 0;
     let pointerDownY = 0;
     let lastRaycastMs = 0;
+    const gemLocalPositions = Array.from({ length: moteCount }, () => new THREE.Vector3());
     const gemWorldPositions = Array.from({ length: moteCount }, () => new THREE.Vector3());
 
     const updatePointerNdc = (clientX: number, clientY: number) => {
@@ -1189,24 +1524,44 @@ export const CrystalBallExperience: React.FC<CrystalBallExperienceProps> = ({
     };
 
     const handlePointerMove = (e: PointerEvent) => {
+      updatePointerNdc(e.clientX, e.clientY);
+      liveStateRef.current.pointerNdcX = _pointerNdc.x;
+      liveStateRef.current.pointerNdcY = _pointerNdc.y;
+
+      // Clear stale projected tooltip immediately while dragging the camera orbit
+      if (e.buttons !== 0 && Math.hypot(e.clientX - pointerDownX, e.clientY - pointerDownY) > 4) {
+        if (liveStateRef.current.hoveredIndex !== -1) {
+          liveStateRef.current.hoveredIndex = -1;
+          setHoverReadout(null);
+        }
+        return;
+      }
+
       const now = performance.now();
       if (now - lastRaycastMs < 32) return;
       lastRaycastMs = now;
 
-      updatePointerNdc(e.clientX, e.clientY);
       _raycaster.setFromCamera(_pointerNdc, camera);
-      const hits = _raycaster.intersectObject(motesInstanced, false);
+      const hits = _raycaster.intersectObjects(raycastTargets, false);
 
-      if (hits.length > 0 && hits[0].instanceId !== undefined) {
-        const idx = hits[0].instanceId;
+      const hit = hits[0];
+      const idx = hit?.instanceId;
+      if (hit && idx !== undefined) {
         liveStateRef.current.hoveredIndex = idx;
         canvas.style.cursor = 'pointer';
         const domainMeta = ALL_DOMAINS_LIST[idx];
         const reading = vector24Ref.current[domainMeta.id];
-        _projVec.copy(gemWorldPositions[idx]).project(camera);
+        const worldPos =
+          hit.object === celestialBackdropUi.interactiveNodesMesh
+            ? celestialBackdropUi.nodeWorldPositions[idx]
+            : gemWorldPositions[idx];
+        _projVec.copy(worldPos).project(camera);
         const rect = canvas.getBoundingClientRect();
         const sx = ((_projVec.x + 1) * 0.5) * rect.width;
         const sy = ((-_projVec.y + 1) * 0.5) * rect.height;
+        const isAnomaly =
+          Boolean(celestialBackdropUi.anomalyFlags[idx]) ||
+          Math.abs(reading.normalized - 0.5) >= TELEMETRY_ANOMALY_DEVIATION_THRESHOLD;
         setHoverReadout({
           index: idx,
           domainId: domainMeta.id,
@@ -1214,9 +1569,20 @@ export const CrystalBallExperience: React.FC<CrystalBallExperienceProps> = ({
           formattedValue: `${reading.rawValue} ${reading.unit}`,
           normalizedPct: Math.round(reading.normalized * 100),
           screenX: sx,
-          screenY: sy
+          screenY: sy,
+          isAnomaly
         });
       } else if (liveStateRef.current.hoveredIndex !== -1) {
+        liveStateRef.current.hoveredIndex = -1;
+        canvas.style.cursor = 'grab';
+        setHoverReadout(null);
+      }
+    };
+
+    const handlePointerLeave = () => {
+      liveStateRef.current.pointerNdcX = 0;
+      liveStateRef.current.pointerNdcY = 0;
+      if (liveStateRef.current.hoveredIndex !== -1) {
         liveStateRef.current.hoveredIndex = -1;
         canvas.style.cursor = 'grab';
         setHoverReadout(null);
@@ -1234,19 +1600,20 @@ export const CrystalBallExperience: React.FC<CrystalBallExperienceProps> = ({
 
       updatePointerNdc(e.clientX, e.clientY);
       _raycaster.setFromCamera(_pointerNdc, camera);
-      const hits = _raycaster.intersectObject(motesInstanced, false);
+      const hits = _raycaster.intersectObjects(raycastTargets, false);
       if (hits.length > 0 && hits[0].instanceId !== undefined) {
         const domainMeta = ALL_DOMAINS_LIST[hits[0].instanceId];
         const nextDomain =
           focusedDomainRef.current === domainMeta.id ? 'all' : domainMeta.id;
         onChangeDomainRef.current(nextDomain);
         setPulseTimestamp(Date.now());
-        audioDspEngine.auditionNativeVoice('kora', compositionPlan);
+        audioDspEngine.auditionNativeVoice('kora', compositionPlanRef.current);
         speakDomainInstantRef.current(nextDomain);
       }
     };
 
     canvas.addEventListener('pointermove', handlePointerMove);
+    canvas.addEventListener('pointerleave', handlePointerLeave);
     canvas.addEventListener('pointerdown', handlePointerDown);
     canvas.addEventListener('pointerup', handlePointerUp);
 
@@ -1277,6 +1644,34 @@ export const CrystalBallExperience: React.FC<CrystalBallExperienceProps> = ({
     canvas.addEventListener('webglcontextrestored', handleContextRestored);
 
     const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    const seerSignals: SeerAnimationSignals = {
+      energy: 0.36,
+      bassEnergy: 0.25,
+      micEnergy: 0,
+      speakingEnergy: 0,
+      beatImpulse: 0,
+      swirlSpeed: 0.45,
+      pointerNdcX: 0,
+      pointerNdcY: 0,
+      orbColor: nebulaMat.uniforms.uColorPrimary.value,
+      accentColor: nebulaMat.uniforms.uColorAccent.value,
+      reducedMotion
+    };
+    const backdropSignals: CelestialBackdropSignals = {
+      energy: 0.36,
+      bassEnergy: 0.25,
+      micEnergy: 0,
+      speakingEnergy: 0,
+      beatImpulse: 0,
+      domainNorms: liveStateRef.current.domainNorms,
+      domainColors: liveStateRef.current.domainColors,
+      focusedIndex: -1,
+      hoveredIndex: -1,
+      fftSpectrum32: liveStateRef.current.fftSpectrum32,
+      orbColor: nebulaMat.uniforms.uColorPrimary.value,
+      accentColor: nebulaMat.uniforms.uColorAccent.value,
+      reducedMotion
+    };
     const clock = new THREE.Clock();
     let frameId = 0;
     let disposed = false;
@@ -1305,6 +1700,18 @@ export const CrystalBallExperience: React.FC<CrystalBallExperienceProps> = ({
       frameId = window.setTimeout(poll, 5);
     };
 
+    const stageWeights: StagedAnimationWeights = {
+      core: 0,
+      seerBreathGaze: 0,
+      handsCandlesIncense: 0,
+      astrolabeRings: 0,
+      constellationBackdrop: 0
+    };
+    let playElapsed = 0;
+    let coreClock = 0;
+    let ringsClock = 0;
+    let constellationClock = 0;
+
     const tick = () => {
       if (disposed) return;
       const delta = Math.min(0.1, clock.getDelta());
@@ -1312,99 +1719,132 @@ export const CrystalBallExperience: React.FC<CrystalBallExperienceProps> = ({
       const st = liveStateRef.current;
 
       const motionMul = reducedMotion ? 0.12 : 1.0;
-      const pulseDecay = st.pulseAge < 0.9 ? Math.pow(1 - st.pulseAge / 0.9, 1.6) : 0;
-      const beatImpulse = Math.min(
-        1.0,
-        st.bassEnergy * 0.68 + st.micEnergy * 0.9 + st.speakingEnergy * 1.15 + pulseDecay * 0.65
-      );
 
-      singularityMat.uniforms.uTime.value = elapsed * motionMul;
+      // Animations stay serenely still before Play, then awaken smoothly ONE BY ONE after Play is engaged
+      if (st.isPlayEngaged) {
+        playElapsed = Math.min(14, playElapsed + delta);
+      } else {
+        playElapsed = Math.max(0, playElapsed - delta * 2.2);
+      }
+      computeStagedAnimationWeights(playElapsed, stageWeights);
+
+      const wCore = stageWeights.core;
+      const wRings = stageWeights.astrolabeRings;
+      const wConstellation = stageWeights.constellationBackdrop;
+
+      coreClock += delta * motionMul * wCore;
+      ringsClock += delta * motionMul * wRings;
+      constellationClock += delta * motionMul * wConstellation;
+
+      // Stage 1: Crystal ball core & inner nebula (zero neon strobe flashing)
+      singularityMat.uniforms.uTime.value = coreClock;
       singularityMat.uniforms.uEnergy.value = THREE.MathUtils.damp(
         singularityMat.uniforms.uEnergy.value,
-        st.energy,
-        5.0,
+        0.18 + st.energy * 0.36 * wCore,
+        3.5,
         delta
       );
-      singularityMat.uniforms.uBeatPulse.value = THREE.MathUtils.damp(
-        singularityMat.uniforms.uBeatPulse.value,
-        beatImpulse,
-        10.0,
-        delta
-      );
+      singularityMat.uniforms.uBeatPulse.value = 0;
 
-      nebulaMat.uniforms.uTime.value = elapsed * motionMul;
+      nebulaMat.uniforms.uTime.value = coreClock;
       nebulaMat.uniforms.uEnergy.value = singularityMat.uniforms.uEnergy.value;
-      nebulaMat.uniforms.uBeatPulse.value = singularityMat.uniforms.uBeatPulse.value;
+      nebulaMat.uniforms.uBeatPulse.value = 0;
       nebulaMat.uniforms.uSwirlSpeed.value = THREE.MathUtils.damp(
         nebulaMat.uniforms.uSwirlSpeed.value,
-        st.swirlSpeed,
-        4.0,
+        st.swirlSpeed * 0.65 * wCore,
+        3.5,
         delta
       );
 
-      auraMat.uniforms.uTime.value = elapsed * motionMul;
-      auraMat.uniforms.uEnergy.value = singularityMat.uniforms.uEnergy.value;
-      auraMat.uniforms.uBeatPulse.value = singularityMat.uniforms.uBeatPulse.value;
+      auraMat.uniforms.uTime.value = coreClock;
+      auraMat.uniforms.uEnergy.value = singularityMat.uniforms.uEnergy.value * 0.6;
+      auraMat.uniforms.uBeatPulse.value = 0;
 
+      const colorLerpAlpha = Math.min(1, delta * (st.micActive ? 4.5 : 2.2));
       _tempColor.set(st.primaryHex);
-      nebulaMat.uniforms.uColorPrimary.value.lerp(_tempColor, Math.min(1, delta * 3));
+      nebulaMat.uniforms.uColorPrimary.value.lerp(_tempColor, colorLerpAlpha);
       singularityMat.uniforms.uColorPrimary.value.copy(nebulaMat.uniforms.uColorPrimary.value);
       auraMat.uniforms.uColorPrimary.value.copy(nebulaMat.uniforms.uColorPrimary.value);
 
       _tempColor.set(st.secondaryHex);
-      nebulaMat.uniforms.uColorSecondary.value.lerp(_tempColor, Math.min(1, delta * 3));
+      nebulaMat.uniforms.uColorSecondary.value.lerp(_tempColor, colorLerpAlpha);
 
       _tempColor.set(st.accentHex);
-      nebulaMat.uniforms.uColorAccent.value.lerp(_tempColor, Math.min(1, delta * 3));
+      nebulaMat.uniforms.uColorAccent.value.lerp(_tempColor, colorLerpAlpha);
       singularityMat.uniforms.uColorAccent.value.copy(nebulaMat.uniforms.uColorAccent.value);
       auraMat.uniforms.uColorAccent.value.copy(nebulaMat.uniforms.uColorAccent.value);
+      arcMat.color.lerp(_tempColor, colorLerpAlpha);
 
+      // Calm warm core illumination — no beat-flash spikes
       corePointLight.color.copy(nebulaMat.uniforms.uColorPrimary.value);
-      corePointLight.intensity = 2.4 + st.energy * 1.9 + beatImpulse * 1.8;
+      corePointLight.intensity = THREE.MathUtils.damp(
+        corePointLight.intensity,
+        1.15 + st.energy * 0.42 * wCore,
+        3.0,
+        delta
+      );
 
-      gimbalOuter.rotation.y += delta * 0.2 * motionMul;
-      gimbalOuter.rotation.z += delta * 0.07 * motionMul;
-      gimbalInner.rotation.y -= delta * 0.28 * motionMul;
-      gimbalInner.rotation.x += delta * 0.09 * motionMul;
+      // Stage 4: Brass gimbal rings & equatorial rune rings
+      gimbalOuter.rotation.y += delta * (0.16 + st.micBass * 0.18) * motionMul * wRings;
+      gimbalOuter.rotation.z += delta * (0.05 + st.micMid * 0.08) * motionMul * wRings;
+      gimbalInner.rotation.y -= delta * (0.22 + st.micTreble * 0.22) * motionMul * wRings;
+      gimbalInner.rotation.x += delta * (0.06 + st.micMid * 0.1) * motionMul * wRings;
 
-      runeRingOuter.rotation.z += delta * (0.14 + st.swirlSpeed * 0.12) * motionMul;
-      runeRingInner.rotation.z -= delta * (0.24 + st.swirlSpeed * 0.15) * motionMul;
-      runeRingOuterMat.opacity = 0.68 + beatImpulse * 0.28;
-      runeRingInnerMat.opacity = 0.56 + beatImpulse * 0.32;
+      _tempColor.set(st.runeOuterHex);
+      runeRingOuterMat.color.lerp(_tempColor, colorLerpAlpha);
+      _tempColor.set(st.runeInnerHex);
+      runeRingInnerMat.color.lerp(_tempColor, colorLerpAlpha);
 
-      dustPoints.rotation.y += delta * (0.18 + st.swirlSpeed * 0.22) * motionMul;
-      stars.rotation.y += delta * 0.012 * motionMul;
-      domeWire.rotation.y -= delta * 0.018 * motionMul;
+      runeRingOuter.rotation.z += delta * (0.11 + st.swirlSpeed * 0.08) * motionMul * wRings;
+      runeRingInner.rotation.z -= delta * (0.18 + st.swirlSpeed * 0.1) * motionMul * wRings;
+
+      const targetOuterOpacity = Math.min(0.28, 0.14 + st.energy * 0.09 * wRings + st.runeOpacityBoost * 0.15 * wRings);
+      const targetInnerOpacity = Math.min(0.24, 0.12 + st.energy * 0.08 * wRings + st.runeOpacityBoost * 0.15 * wRings);
+      runeRingOuterMat.opacity = THREE.MathUtils.damp(runeRingOuterMat.opacity, targetOuterOpacity, 5.0, delta);
+      runeRingInnerMat.opacity = THREE.MathUtils.damp(runeRingInnerMat.opacity, targetInnerOpacity, 5.0, delta);
+
+      const targetOuterScale = 1 + st.runeScaleBoost * 0.5 * wRings;
+      const targetInnerScale = 1 + st.runeScaleBoost * 0.65 * wRings;
+      const dampedOuterScale = THREE.MathUtils.damp(runeRingOuter.scale.x, targetOuterScale, 6.0, delta);
+      const dampedInnerScale = THREE.MathUtils.damp(runeRingInner.scale.x, targetInnerScale, 6.0, delta);
+      runeRingOuter.scale.set(dampedOuterScale, dampedOuterScale, 1);
+      runeRingInner.scale.set(dampedInnerScale, dampedInnerScale, 1);
+
+      dustPoints.rotation.y += delta * (0.14 + st.swirlSpeed * 0.16) * motionMul * wCore;
+      stars.rotation.y += delta * 0.01 * motionMul * wConstellation;
+      domeWire.rotation.y -= delta * 0.014 * motionMul * wConstellation;
 
       updateArcSegmentsBuffer(
         arcVertexPositions,
         arcCount,
         segmentsPerArc,
-        elapsed * motionMul,
-        st.energy + beatImpulse * 0.65,
-        1.14
+        coreClock,
+        0.15 + st.energy * 0.35 * wCore,
+        1.12
       );
       arcGeo.attributes.position.needsUpdate = true;
-      arcMat.opacity = Math.min(0.96, 0.34 + beatImpulse * 0.64);
+      arcMat.opacity = THREE.MathUtils.damp(arcMat.opacity, 0.05 + st.energy * 0.13 * wCore, 4.0, delta);
 
+      // Stage 5: 24-domain orbital gems & constellation filaments
       const highlightIdx = st.hoveredIndex >= 0 ? st.hoveredIndex : st.focusedIndex;
       for (let i = 0; i < moteCount; i++) {
         const norm = st.domainNorms[i] ?? 0.5;
         const baseAngle =
-          (i / moteCount) * Math.PI * 2 + elapsed * (0.16 + norm * 0.14) * motionMul;
-        const tilt = Math.sin(i * 1.65 + elapsed * 0.35) * 0.44;
-        const radius = 1.56 + norm * 0.44;
+          (i / moteCount) * Math.PI * 2 + constellationClock * (0.14 + norm * 0.1);
+        const tilt = Math.sin(i * 1.65 + constellationClock * 0.3) * 0.42;
+        const radius = 1.56 + norm * 0.4;
         const gx = Math.cos(baseAngle) * radius;
-        const gy = Math.sin(tilt) * 0.62 + 0.14;
+        const gy = Math.sin(tilt) * 0.58 + 0.14;
         const gz = Math.sin(baseAngle) * radius;
 
-        gemWorldPositions[i].set(gx, gy + 0.35, gz);
+        gemLocalPositions[i].set(gx, gy, gz);
+        gemWorldPositions[i].set(gx, gy + 0.35, gz).applyMatrix4(orbAssembly.matrixWorld);
         _dummyObj.position.set(gx, gy, gz);
 
         const isHighlighted = i === highlightIdx;
-        const s = (0.68 + norm * 0.72) * (isHighlighted ? 1.65 : 1.0);
+        const s = (0.64 + norm * 0.58) * (isHighlighted ? 1.55 : 1.0);
         _dummyObj.scale.set(s, s * 1.25, s);
-        _dummyObj.rotation.set(elapsed + i, elapsed * 0.75, i);
+        _dummyObj.rotation.set(constellationClock + i, constellationClock * 0.65, i);
         _dummyObj.updateMatrix();
         motesInstanced.setMatrixAt(i, _dummyObj.matrix);
       }
@@ -1412,10 +1852,8 @@ export const CrystalBallExperience: React.FC<CrystalBallExperienceProps> = ({
 
       for (let i = 0; i < moteCount; i++) {
         const nextIdx = (i + 1) % moteCount;
-        const p1 = gemWorldPositions[i];
-        const p2 = gemWorldPositions[nextIdx];
-        _gemPos.set(p1.x, p1.y - 0.35, p1.z);
-        _nextGemPos.set(p2.x, p2.y - 0.35, p2.z);
+        _gemPos.copy(gemLocalPositions[i]);
+        _nextGemPos.copy(gemLocalPositions[nextIdx]);
 
         const offset = i * 6;
         constellationPositions[offset] = _gemPos.x;
@@ -1428,12 +1866,12 @@ export const CrystalBallExperience: React.FC<CrystalBallExperienceProps> = ({
 
       const beamOffset = moteCount * 6;
       if (highlightIdx >= 0 && highlightIdx < moteCount) {
-        const hp = gemWorldPositions[highlightIdx];
+        const hp = gemLocalPositions[highlightIdx];
         constellationPositions[beamOffset] = 0;
         constellationPositions[beamOffset + 1] = 0;
         constellationPositions[beamOffset + 2] = 0;
         constellationPositions[beamOffset + 3] = hp.x;
-        constellationPositions[beamOffset + 4] = hp.y - 0.35;
+        constellationPositions[beamOffset + 4] = hp.y;
         constellationPositions[beamOffset + 5] = hp.z;
       } else {
         constellationPositions[beamOffset] = 0;
@@ -1444,6 +1882,30 @@ export const CrystalBallExperience: React.FC<CrystalBallExperienceProps> = ({
         constellationPositions[beamOffset + 5] = 0;
       }
       constellationGeo.attributes.position.needsUpdate = true;
+
+      // Update Pretty Female Fortune Teller Portrait, Astrolabe Halo, Incense Smoke, Hovering Hands & Candles
+      seerSignals.energy = st.energy;
+      seerSignals.bassEnergy = st.bassEnergy;
+      seerSignals.micEnergy = st.micEnergy;
+      seerSignals.speakingEnergy = st.speakingEnergy;
+      seerSignals.beatImpulse = 0;
+      seerSignals.swirlSpeed = st.swirlSpeed;
+      seerSignals.pointerNdcX = st.pointerNdcX;
+      seerSignals.pointerNdcY = st.pointerNdcY;
+      seerSignals.stageWeights = stageWeights;
+      parlorRig.update(elapsed, delta, seerSignals);
+
+      // Update Behind-the-Orb 3D 24-Domain Telemetry Arch, Anomaly Markers & 32-Band Audio Halo (Stage 5)
+      backdropSignals.energy = st.energy;
+      backdropSignals.bassEnergy = st.bassEnergy;
+      backdropSignals.micEnergy = st.micEnergy;
+      backdropSignals.speakingEnergy = st.speakingEnergy;
+      backdropSignals.beatImpulse = 0;
+      backdropSignals.domainNorms = st.domainNorms;
+      backdropSignals.focusedIndex = st.focusedIndex;
+      backdropSignals.hoveredIndex = st.hoveredIndex;
+      backdropSignals.animationWeight = wConstellation;
+      celestialBackdropUi.update(elapsed, delta, backdropSignals);
 
       controls.update();
 
@@ -1468,14 +1930,15 @@ export const CrystalBallExperience: React.FC<CrystalBallExperienceProps> = ({
       clearTimeout(frameId);
       window.removeEventListener('resize', handleResize);
       canvas.removeEventListener('pointermove', handlePointerMove);
+      canvas.removeEventListener('pointerleave', handlePointerLeave);
       canvas.removeEventListener('pointerdown', handlePointerDown);
       canvas.removeEventListener('pointerup', handlePointerUp);
       canvas.removeEventListener('webglcontextlost', handleContextLost);
       canvas.removeEventListener('webglcontextrestored', handleContextRestored);
       controls.dispose();
+      parlorRig.dispose();
+      celestialBackdropUi.dispose();
 
-      floorGeo.dispose();
-      floorMat.dispose();
       plinthGeo.dispose();
       plinthMat.dispose();
       collarGeo.dispose();
@@ -1512,7 +1975,6 @@ export const CrystalBallExperience: React.FC<CrystalBallExperienceProps> = ({
       starGeo.dispose();
       starMat.dispose();
 
-      altarTex.dispose();
       runeTexPrimary.dispose();
       runeTexSecondary.dispose();
       brassRoughTex.dispose();
@@ -1643,7 +2105,7 @@ export const CrystalBallExperience: React.FC<CrystalBallExperienceProps> = ({
   const focusedReading = focusedDomain === 'all' ? null : vector24[focusedDomain];
 
   return (
-    <div className="relative w-screen h-screen overflow-hidden bg-[#05070e] text-slate-100 select-none">
+    <div className="relative w-screen h-screen overflow-hidden bg-[#0a0d14] text-[#e6e1d8] select-none">
       {/* 3D WebGL Canvas Mount (Double-click anywhere on orb to query & speak) */}
       <div
         ref={mountRef}
@@ -1655,40 +2117,71 @@ export const CrystalBallExperience: React.FC<CrystalBallExperienceProps> = ({
         <canvas ref={fallbackCanvasRef} className="absolute inset-0 w-full h-full" />
       )}
 
-      {/* Projected 3D Hover Readout over Orbital Domain Gem */}
+      {/* Projected 3D Hover Readout over Orbital Domain Gem or Behind-the-Orb Telemetry Arch Node */}
       {hoverReadout && (
         <div
           style={{
-            transform: `translate(${Math.round(hoverReadout.screenX + 14)}px, ${Math.round(hoverReadout.screenY - 20)}px)`
+            transform: `translate(${Math.max(
+              12,
+              Math.min(
+                (typeof window !== 'undefined' ? window.innerWidth : 1280) - 228,
+                Math.round(hoverReadout.screenX + 14)
+              )
+            )}px, ${Math.max(
+              12,
+              Math.min(
+                (typeof window !== 'undefined' ? window.innerHeight : 720) - 68,
+                Math.round(hoverReadout.screenY - 20)
+              )
+            )}px)`
           }}
-          className="pointer-events-none fixed top-0 left-0 z-20 rounded-lg bg-[#0b0f17]/95 border border-amber-400/50 px-3 py-1.5 shadow-xl"
+          className="pointer-events-none fixed top-0 left-0 z-20 rounded-xl bg-[#141821]/95 border border-[#c8b28e]/30 px-3 py-1.5 shadow-xl"
         >
-          <div className="text-xs font-semibold text-white whitespace-nowrap">{hoverReadout.name}</div>
-          <div className="text-[11px] font-mono tabular-nums text-amber-300 flex items-center gap-1.5 whitespace-nowrap">
+          <div className="text-xs font-medium text-[#ede8df] whitespace-nowrap flex items-center gap-2">
+            <span>{hoverReadout.name}</span>
+            {hoverReadout.isAnomaly && (
+              <span className="text-[10px] font-mono uppercase tracking-wider text-[#d4a96a]">
+                Anomaly
+              </span>
+            )}
+          </div>
+          <div className="text-[11px] font-mono tabular-nums text-[#cfc2aa] flex items-center gap-1.5 whitespace-nowrap">
             <span>{hoverReadout.formattedValue}</span>
-            <span aria-hidden="true">·</span>
-            <span className="text-cyan-300">{hoverReadout.normalizedPct}%</span>
+            <span aria-hidden="true" className="text-stone-500">·</span>
+            <span className="text-[#94b8b1]">{hoverReadout.normalizedPct}%</span>
           </div>
         </div>
       )}
 
-      {/* Top-Left Minimal Wordmark & Live Atmospheric Summary */}
-      <div className="pointer-events-none fixed top-5 left-6 z-20 max-w-md space-y-1">
-        <h1 className="font-display text-xl sm:text-2xl font-semibold tracking-wide text-white">
+      {/* Top-Left Minimal Wordmark, Dynamic Telemetry Signature & Active Hour */}
+      <div className="pointer-events-none fixed top-5 left-6 z-20 max-w-xl space-y-1">
+        <h1 className="font-display text-xl sm:text-2xl font-medium tracking-wide text-[#ebe6dc]/92">
           Weather Beats
         </h1>
-        <div className="text-xs font-mono tabular-nums text-slate-300 flex flex-wrap items-center gap-2">
+        <div className="text-xs font-mono tabular-nums text-[#a6a29a] flex flex-wrap items-center gap-2">
           <span>{weatherCtx.region}</span>
-          <span aria-hidden="true">·</span>
+          <span aria-hidden="true" className="text-stone-600">·</span>
           <span>{weatherCtx.temperatureC.toFixed(1)}°C</span>
-          <span aria-hidden="true">·</span>
+          <span aria-hidden="true" className="text-stone-600">·</span>
           <span>AQI {weatherCtx.aqi}</span>
-          <span aria-hidden="true">·</span>
-          <span>{compositionPlan.bpm} BPM</span>
+          <span aria-hidden="true" className="text-stone-600">·</span>
+          <span className="text-[#9bb8b3]">{compositionPlan.telemetrySignatureLabel}</span>
+          <span aria-hidden="true" className="text-stone-600">·</span>
+          <span className="text-[#d4bc94]">
+            {compositionPlan.activeTelemetryHour.hourLabel} · {compositionPlan.activeTelemetryHour.mapping.instrument}
+          </span>
+          {seqStatus.isPlaying && (
+            <>
+              <span aria-hidden="true" className="text-stone-600">·</span>
+              <span className="text-[#99bfa8]">
+                Bar {seqStatus.currentBar} · {seqStatus.currentChord}
+              </span>
+            </>
+          )}
           {focusedReading && (
             <>
-              <span aria-hidden="true">·</span>
-              <span className="text-amber-300">
+              <span aria-hidden="true" className="text-stone-600">·</span>
+              <span className="text-[#d4bc94]">
                 {focusedReading.name}: {focusedReading.rawValue} {focusedReading.unit}
               </span>
             </>
@@ -1702,144 +2195,326 @@ export const CrystalBallExperience: React.FC<CrystalBallExperienceProps> = ({
           onClick={onOpenSettings}
           aria-label="Open Settings Drawer"
           title="Open Settings Drawer"
-          className="group w-11 h-11 rounded-full bg-[#0d1322] hover:bg-slate-800 border border-slate-700 hover:border-amber-400/70 flex items-center justify-center text-slate-200 hover:text-amber-300 transition-all shadow-lg focus-visible:outline-2 focus-visible:outline-cyan-400"
+          className="group w-11 h-11 rounded-full bg-[#151a24]/90 hover:bg-[#1d2331] border border-white/[0.1] hover:border-[#c8b28e]/45 flex items-center justify-center text-[#c9c4ba] hover:text-[#e6d5b8] transition-all shadow-lg focus-visible:outline-2 focus-visible:outline-[#c8b28e]"
         >
           <Settings className="w-5 h-5 transition-transform duration-300 group-hover:rotate-45" />
         </button>
       </div>
 
-      {/* Compact Single Bottom Control Dock (Zero Obstruction Over Crystal Ball) */}
-      <div className="fixed bottom-3 left-1/2 -translate-x-1/2 z-20 w-[min(860px,94vw)] flex flex-col items-center gap-1.5 pointer-events-none">
-        <button
-          onClick={() => setDockCollapsed((c) => !c)}
-          className="pointer-events-auto px-3 py-1 rounded-full bg-[#0d1322] border border-slate-700/90 text-[11px] font-mono text-slate-300 hover:text-white flex items-center gap-1.5 transition-colors shadow"
+      {/* Minimal Bottom-Right Play & Controls Bar When Controls Are Hidden By Default (Matches Clean Emulator Startup) */}
+      {dockCollapsed && (
+        <div className="fixed bottom-4 right-5 z-20 flex items-center gap-2">
+          <button
+            onClick={handleToggleMusic}
+            className={`px-3.5 py-1.5 rounded-xl text-[11px] font-mono font-semibold flex items-center gap-1.5 border whitespace-nowrap transition-colors shadow-lg focus-visible:outline-2 focus-visible:outline-[#c8b28e] ${
+              seqStatus.isPlaying
+                ? 'bg-[#7fa898] hover:bg-[#8eb5a5] text-[#11151d] border-[#8eb5a5]/70'
+                : 'bg-[#c9b18a] hover:bg-[#d5bf9b] text-[#11151d] border-[#d5bf9b]/70'
+            }`}
+          >
+            {seqStatus.isPlaying ? (
+              <Square className="w-3 h-3 fill-current" />
+            ) : (
+              <Play className="w-3 h-3 fill-current" />
+            )}
+            <span>{seqStatus.isPlaying ? 'Stop Flow' : 'Play Flow'}</span>
+          </button>
+          <button
+            onClick={() => setDockCollapsed(false)}
+            aria-expanded={false}
+            aria-controls="crystal-ball-control-dock"
+            title="Show Controls (Shortcut: H)"
+            className="px-3.5 py-1.5 rounded-xl bg-[#151a24]/90 hover:bg-[#1e2534] border border-white/[0.1] hover:border-[#c8b28e]/40 text-[11px] font-mono text-[#c9c4ba] hover:text-[#ede8df] flex items-center gap-1.5 transition-colors shadow-lg focus-visible:outline-2 focus-visible:outline-[#c8b28e]"
+          >
+            <ChevronUp className="w-3.5 h-3.5 text-[#c8b28e]" />
+            <span>Controls</span>
+          </button>
+        </div>
+      )}
+
+      {/* Compact Single Bottom Control Dock (Hidden By Default · Zero Obstruction Over Seer & Crystal Ball) */}
+      <div className="fixed bottom-3 left-1/2 -translate-x-1/2 z-20 w-[min(980px,95vw)] flex flex-col items-center gap-2 pointer-events-none">
+        {/* Subtle Faded Ambient Seer Whisper Subtitle (Non-Obstructive, Zero Card Box) */}
+        <div
+          aria-live="polite"
+          className={`pointer-events-none max-w-2xl px-4 text-center transition-all duration-700 ease-out motion-reduce:transition-none ${
+            activeWhisper && ambientWhispersEnabled
+              ? 'opacity-90 translate-y-0'
+              : 'opacity-0 translate-y-1'
+          }`}
         >
-          {dockCollapsed ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-          <span>{dockCollapsed ? 'Show Controls' : 'Hide Controls'}</span>
-        </button>
+          {activeWhisper && ambientWhispersEnabled && (
+            <p className="inline-block px-3.5 py-1.5 rounded-lg bg-[#10141c]/85 border border-white/[0.08] font-display italic text-xs sm:text-sm tracking-wide text-[#efe6d6]">
+              <span>“{activeWhisper.text}”</span>
+              <span className="not-italic font-mono text-[10px] text-[#a9a49b] ml-2 whitespace-nowrap">
+                · {activeWhisper.domainName.replace(' Intelligence', '')}
+              </span>
+            </p>
+          )}
+        </div>
 
         {!dockCollapsed && (
-          <div className="w-full pointer-events-auto rounded-2xl bg-[#0d1322] border border-slate-700/85 px-3.5 py-2.5 flex flex-col gap-2 shadow-2xl">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex flex-wrap items-center gap-1.5">
-                <button
-                  onClick={handleSyncWeather}
-                  disabled={isSyncingWeather}
-                  className="px-3 py-1.5 rounded-xl bg-[#151e33] hover:bg-slate-800 border border-slate-700 text-xs font-semibold text-cyan-300 flex items-center gap-1.5 whitespace-nowrap shrink-0 disabled:opacity-60"
-                >
-                  <MapPin className="w-3.5 h-3.5" />
-                  <span>{isSyncingWeather ? 'Syncing...' : 'Sync Weather'}</span>
-                </button>
+          <>
+            <button
+              onClick={() => setDockCollapsed(true)}
+              aria-expanded={true}
+              aria-controls="crystal-ball-control-dock"
+              title="Hide Controls (Shortcut: H)"
+              className="pointer-events-auto px-3 py-1 rounded-full bg-[#151a24]/95 border border-white/[0.1] text-[11px] font-mono text-[#b5b0a6] hover:text-[#ede8df] flex items-center gap-1.5 transition-colors shadow focus-visible:outline-2 focus-visible:outline-[#c8b28e]"
+            >
+              <ChevronDown className="w-3.5 h-3.5" />
+              <span>Hide Controls</span>
+            </button>
 
-                <button
-                  onClick={handleToggleMusic}
-                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 border whitespace-nowrap shrink-0 transition-colors ${
-                    seqStatus.isPlaying
-                      ? 'bg-emerald-500 text-slate-950 border-emerald-400'
-                      : 'bg-cyan-500 hover:bg-cyan-400 text-slate-950 border-cyan-400'
-                  }`}
-                >
-                  {seqStatus.isPlaying ? (
-                    <Square className="w-3.5 h-3.5 fill-current" />
-                  ) : (
-                    <Play className="w-3.5 h-3.5 fill-current" />
-                  )}
-                  <span>{seqStatus.isPlaying ? 'Stop Beats' : 'Play 32-Bar'}</span>
-                </button>
-
-                <button
-                  onClick={handleToggleListening}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 border whitespace-nowrap shrink-0 transition-colors ${
-                    isListening
-                      ? 'bg-rose-500 text-white border-rose-400'
-                      : 'bg-[#151e33] hover:bg-slate-800 text-amber-300 border-slate-700'
-                  }`}
-                >
-                  {isListening ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
-                  <span>{isListening ? 'Stop Mic' : 'Ask by Voice'}</span>
-                </button>
-
-                {oracleResult && (
+            <div
+              id="crystal-ball-control-dock"
+              className="w-full pointer-events-auto rounded-2xl bg-[#131822]/96 border border-white/[0.09] px-4 py-3 flex flex-col gap-2.5 shadow-2xl"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-1.5">
                   <button
-                    onClick={() =>
-                      isSpeakingReply ? stopSpeechPlayback() : playVoiceReply(oracleResult)
-                    }
-                    className="px-2.5 py-1.5 rounded-xl bg-[#151e33] hover:bg-slate-800 border border-slate-700 text-xs font-semibold text-slate-200 flex items-center gap-1.5 whitespace-nowrap shrink-0"
+                    onClick={handleSyncWeather}
+                    disabled={isSyncingWeather}
+                    className="px-2.5 py-1.5 rounded-xl bg-[#1b2230] hover:bg-[#232c3d] border border-white/[0.08] text-xs font-medium text-[#a3c2bc] flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors disabled:opacity-60"
                   >
-                    {isSpeakingReply ? (
-                      <Square className="w-3 h-3 fill-current text-amber-300" />
-                    ) : (
-                      <RotateCcw className="w-3.5 h-3.5 text-cyan-300" />
-                    )}
-                    <span>{isSpeakingReply ? 'Silence' : 'Replay'}</span>
+                    <MapPin className="w-3.5 h-3.5" />
+                    <span>{isSyncingWeather ? 'Syncing...' : 'Sync Weather'}</span>
                   </button>
-                )}
 
-                <button
-                  onClick={onToggleVoiceReply}
-                  aria-label={voiceReplyEnabled ? 'Mute spoken AI voice' : 'Unmute spoken AI voice'}
-                  className="px-2.5 py-1.5 rounded-xl bg-[#151e33] hover:bg-slate-800 border border-slate-700 text-xs font-semibold text-slate-300 flex items-center gap-1.5 whitespace-nowrap shrink-0"
-                >
-                  {voiceReplyEnabled ? (
-                    <Volume2 className="w-3.5 h-3.5 text-cyan-300" />
-                  ) : (
-                    <VolumeX className="w-3.5 h-3.5 text-slate-500" />
+                  <button
+                    onClick={handleToggleMusic}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 border whitespace-nowrap shrink-0 transition-colors ${
+                      seqStatus.isPlaying
+                        ? 'bg-[#7fa898] hover:bg-[#8eb5a5] text-[#11151d] border-[#8eb5a5]/70'
+                        : 'bg-[#c9b18a] hover:bg-[#d5bf9b] text-[#11151d] border-[#d5bf9b]/70'
+                    }`}
+                  >
+                    {seqStatus.isPlaying ? (
+                      <Square className="w-3.5 h-3.5 fill-current" />
+                    ) : (
+                      <Play className="w-3.5 h-3.5 fill-current" />
+                    )}
+                    <span>{seqStatus.isPlaying ? 'Stop Flow' : 'Play Flow'}</span>
+                  </button>
+
+                  <button
+                    onClick={() => audioDspEngine.setLyriaFlowEnabled(!lyriaState.enabled)}
+                    aria-pressed={lyriaState.enabled}
+                    title="Blend purely instrumental Google Lyria 3 Flow Music seamlessly with the live 24-telemetry synth"
+                    className={`px-2.5 py-1.5 rounded-xl text-xs font-medium flex items-center gap-1.5 border whitespace-nowrap shrink-0 transition-colors ${
+                      lyriaState.enabled
+                        ? 'bg-[#222938] text-[#a3c2bc] border-[#7fa898]/45 hover:bg-[#293244]'
+                        : 'bg-[#1b2230] hover:bg-[#232c3d] text-[#c9c4ba] border-white/[0.08]'
+                    }`}
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-[#c9b18a]" />
+                    <span>{lyriaState.enabled ? 'Lyria Flow On' : 'Lyria Flow'}</span>
+                  </button>
+
+                  <button
+                    onClick={() => audioDspEngine.setAmbientWhispersEnabled(!ambientWhispersEnabled)}
+                    aria-pressed={ambientWhispersEnabled}
+                    title="Toggle subtle ambient telemetry whispers from the fortune teller during playback"
+                    className={`px-2.5 py-1.5 rounded-xl text-xs font-medium flex items-center gap-1.5 border whitespace-nowrap shrink-0 transition-colors ${
+                      ambientWhispersEnabled
+                        ? 'bg-[#222938] text-[#e0cda9] border-[#c8b28e]/35 hover:bg-[#293244]'
+                        : 'bg-[#1b2230] hover:bg-[#232c3d] text-[#949088] border-white/[0.08]'
+                    }`}
+                  >
+                    <Waves className="w-3.5 h-3.5" />
+                    <span>{ambientWhispersEnabled ? 'Whispers On' : 'Whispers'}</span>
+                  </button>
+
+                  <button
+                    onClick={handleToggleListening}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-medium flex items-center gap-1.5 border whitespace-nowrap shrink-0 transition-colors ${
+                      isListening
+                        ? 'bg-[#c27d77] text-[#12151c] border-[#d2908a]'
+                        : 'bg-[#1b2230] hover:bg-[#232c3d] text-[#d9c39e] border-white/[0.08]'
+                    }`}
+                  >
+                    {isListening ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
+                    <span>{isListening ? 'Stop Mic' : 'Ask by Voice'}</span>
+                  </button>
+
+                  <button
+                    onClick={handleToggleMicVisualizer}
+                    aria-pressed={isVisualizerPinned || isMicVisualizerActive}
+                    title="Sync nebula core and floating runes to live microphone audio"
+                    className={`px-3 py-1.5 rounded-xl text-xs font-medium flex items-center gap-1.5 border whitespace-nowrap shrink-0 transition-colors ${
+                      isVisualizerPinned
+                        ? 'bg-[#c9b18a] text-[#11151d] border-[#d5bf9b]'
+                        : isMicVisualizerActive
+                          ? 'bg-[#222938] text-[#e0cda9] border-[#c8b28e]/40'
+                          : 'bg-[#1b2230] hover:bg-[#232c3d] text-[#c9c4ba] border-white/[0.08]'
+                    }`}
+                  >
+                    <AudioLines className="w-3.5 h-3.5" />
+                    <span>{isVisualizerPinned ? 'Mic Sync On' : 'Mic Sync'}</span>
+                  </button>
+
+                  <button
+                    onClick={handleToggleLiveVoice}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-medium flex items-center gap-1.5 border whitespace-nowrap shrink-0 transition-colors ${
+                      liveVoiceState === 'connected'
+                        ? 'bg-[#7fa898] text-[#11151d] border-[#8eb5a5]'
+                        : liveVoiceState === 'connecting'
+                          ? 'bg-[#222938] text-[#e0cda9] border-[#c8b28e]/45'
+                          : 'bg-[#1b2230] hover:bg-[#232c3d] text-[#a3c2bc] border-white/[0.08]'
+                    }`}
+                  >
+                    <Radio className="w-3.5 h-3.5" />
+                    <span>
+                      {liveVoiceState === 'connected'
+                        ? 'End Live Voice'
+                        : liveVoiceState === 'connecting'
+                          ? 'Connecting...'
+                          : 'Live Voice'}
+                    </span>
+                  </button>
+
+                  {audioDspEngine.canUndoDirectorPatch() && (
+                    <button
+                      onClick={() => {
+                        const msg = audioDspEngine.revertLastDirectorPatch();
+                        setActionNotice(msg ?? 'Reverted last musical direction.');
+                      }}
+                      className="px-2.5 py-1.5 rounded-xl bg-[#1b2230] hover:bg-[#232c3d] border border-white/[0.08] text-xs font-medium text-[#d4bc94] flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors"
+                    >
+                      <Undo2 className="w-3.5 h-3.5" />
+                      <span>Undo Mix</span>
+                    </button>
                   )}
-                  <span>{voiceReplyEnabled ? 'Voice On' : 'Muted'}</span>
-                </button>
+
+                  {oracleResult && (
+                    <button
+                      onClick={() =>
+                        isSpeakingReply ? stopSpeechPlayback() : playVoiceReply(oracleResult)
+                      }
+                      className="px-2.5 py-1.5 rounded-xl bg-[#1b2230] hover:bg-[#232c3d] border border-white/[0.08] text-xs font-medium text-[#dcd7cd] flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors"
+                    >
+                      {isSpeakingReply ? (
+                        <Square className="w-3 h-3 fill-current text-[#d4bc94]" />
+                      ) : (
+                        <RotateCcw className="w-3.5 h-3.5 text-[#9bb8b3]" />
+                      )}
+                      <span>{isSpeakingReply ? 'Silence' : 'Replay'}</span>
+                    </button>
+                  )}
+
+                  <button
+                    onClick={onToggleVoiceReply}
+                    aria-label={voiceReplyEnabled ? 'Mute spoken AI voice' : 'Unmute spoken AI voice'}
+                    className="px-2.5 py-1.5 rounded-xl bg-[#1b2230] hover:bg-[#232c3d] border border-white/[0.08] text-xs font-medium text-[#c9c4ba] flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors"
+                  >
+                    {voiceReplyEnabled ? (
+                      <Volume2 className="w-3.5 h-3.5 text-[#9bb8b3]" />
+                    ) : (
+                      <VolumeX className="w-3.5 h-3.5 text-[#75736e]" />
+                    )}
+                    <span>{voiceReplyEnabled ? 'Voice On' : 'Muted'}</span>
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <label htmlFor="orb-domain-lens" className="text-xs font-mono text-[#9c9991]">
+                    Lens
+                  </label>
+                  <select
+                    id="orb-domain-lens"
+                    value={focusedDomain}
+                    onChange={(e) => handleLensChange(e.target.value as 'all' | DomainCategory)}
+                    className="bg-[#0f131b] border border-white/[0.1] rounded-lg px-2.5 py-1.5 text-xs font-medium text-[#e6e1d8] focus:outline-none focus:border-[#c8b28e]/60 cursor-pointer"
+                  >
+                    <option value="all">All 24 Domains</option>
+                    {ALL_DOMAINS_LIST.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
-              <div className="flex items-center gap-2 shrink-0">
-                <label htmlFor="orb-domain-lens" className="text-xs font-mono text-slate-400">
-                  Lens
-                </label>
-                <select
-                  id="orb-domain-lens"
-                  value={focusedDomain}
-                  onChange={(e) => handleLensChange(e.target.value as 'all' | DomainCategory)}
-                  className="bg-[#0b0f17] border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-white focus:outline-none focus:border-cyan-400 cursor-pointer"
+              <form onSubmit={handleTypedSubmit} className="flex items-center gap-2">
+                <input
+                  ref={typedInputRef}
+                  type="text"
+                  value={typedQuestion}
+                  onChange={(e) => setTypedQuestion(e.target.value)}
+                  placeholder={
+                    isListening
+                      ? `Listening: ${liveTranscript || 'speak your question or musical direction...'}`
+                      : oracleLoading
+                        ? 'Consulting 24 telemetry streams...'
+                        : 'Ask telemetry, direct the mix (e.g. Make it warmer with deeper reverb), or create a smart alert...'
+                  }
+                  className="flex-1 select-text bg-[#0f131b] border border-white/[0.09] rounded-xl px-3 py-2 text-xs text-[#ece7df] placeholder:text-[#7e7b74] focus:outline-none focus:border-[#c8b28e]/55"
+                />
+                <button
+                  type="submit"
+                  disabled={oracleLoading || !typedQuestion.trim()}
+                  className="px-3.5 py-2 rounded-xl bg-[#1b2230] hover:bg-[#232c3d] border border-white/[0.09] text-xs font-medium text-[#d8c4a0] flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors disabled:opacity-50"
                 >
-                  <option value="all">All 24 Domains</option>
-                  {ALL_DOMAINS_LIST.map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+                  <Send className="w-3.5 h-3.5" />
+                  <span>{oracleLoading ? 'Working...' : 'Send'}</span>
+                </button>
+              </form>
+
+              {(lyriaState.enabled || lyriaState.errorMessage) && (
+                <div className="flex flex-col gap-1.5 rounded-xl bg-[#0f131b] border border-white/[0.08] px-3 py-2 text-[11px] font-mono">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5 shrink-0">
+                      <span className="text-[#c9b18a] whitespace-nowrap">Synth ↔ Lyria</span>
+                      <input
+                        type="range"
+                        min={0}
+                        max={1}
+                        step={0.02}
+                        value={lyriaState.blend}
+                        onChange={(e) => audioDspEngine.setLyriaFlowBlend(Number(e.target.value))}
+                        aria-label="Synth to Google Lyria Flow blend"
+                        className="w-28 sm:w-36 accent-[#7fa898] cursor-pointer h-1.5 bg-[#202634] rounded-lg"
+                      />
+                      <span className="text-[#a3c2bc] tabular-nums whitespace-nowrap">
+                        {Math.round(lyriaState.blend * 100)}% Lyria
+                      </span>
+                    </div>
+                    <div className="min-w-0 flex-1 sm:text-right truncate text-[#9c9991]">
+                      {lyriaState.errorMessage
+                        ? 'Lyria stream paused · Live 24-telemetry synth playing'
+                        : !seqStatus.isPlaying
+                          ? 'Lyria Clip armed · press Play Flow to stream instrumental blend'
+                          : lyriaState.status === 'generating'
+                            ? 'Composing instrumental Lyria 3 clip (live synth playing)...'
+                            : lyriaState.status === 'crossfading'
+                              ? `Crossfading Deck ${lyriaState.activeDeck ?? 'A'} · ${lyriaState.activePromptSummary ?? 'evolving'}`
+                              : lyriaState.activeDeck
+                                ? `Deck ${lyriaState.activeDeck} live · ${lyriaState.activePromptSummary ?? 'instrumental flow'}`
+                                : 'Lyria Flow ready'}
+                    </div>
+                  </div>
+                  {lyriaState.errorMessage && (
+                    <div className="text-[#e5a8a3] leading-snug">{lyriaState.errorMessage}</div>
+                  )}
+                </div>
+              )}
+
+              {(actionNotice ||
+                liveVoiceError ||
+                micError ||
+                micVisualizerError ||
+                (!voiceReplyEnabled && oracleResult)) && (
+                <div className="text-[11px] font-mono text-[#d4bc94] truncate px-1">
+                  {actionNotice ||
+                    liveVoiceError ||
+                    micError ||
+                    micVisualizerError ||
+                    oracleResult?.answerText}
+                </div>
+              )}
             </div>
-
-            <form onSubmit={handleTypedSubmit} className="flex items-center gap-2">
-              <input
-                ref={typedInputRef}
-                type="text"
-                value={typedQuestion}
-                onChange={(e) => setTypedQuestion(e.target.value)}
-                placeholder={
-                  isListening
-                    ? `Listening: ${liveTranscript || 'speak your telemetry question...'}`
-                    : oracleLoading
-                      ? 'Crystal ball consulting 24 telemetry streams...'
-                      : 'Ask the crystal ball a question (e.g., How is solar energy or security?)...'
-                }
-                className="flex-1 bg-[#0b0f17] border border-slate-700/80 rounded-xl px-3 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-cyan-400"
-              />
-              <button
-                type="submit"
-                disabled={oracleLoading || !typedQuestion.trim()}
-                className="px-3.5 py-1.5 rounded-xl bg-[#151e33] hover:bg-slate-800 border border-slate-700 text-xs font-semibold text-cyan-300 flex items-center gap-1.5 whitespace-nowrap shrink-0 disabled:opacity-50"
-              >
-                <Send className="w-3.5 h-3.5" />
-                <span>{oracleLoading ? 'Asking...' : 'Ask'}</span>
-              </button>
-            </form>
-
-            {(micError || (!voiceReplyEnabled && oracleResult)) && (
-              <div className="text-[11px] font-mono text-amber-300 truncate px-1">
-                {micError ? micError : oracleResult?.answerText}
-              </div>
-            )}
-          </div>
+          </>
         )}
       </div>
     </div>

@@ -254,6 +254,52 @@ function dataUrlToUint8Array(dataUrl: string): Uint8Array {
 }
 
 /**
+ * Converts an AI-generated PNG/JPEG data URL onto a crisp 1024x1024 JPEG
+ * suitable for ID3v2.3 APIC cover embedding and direct download.
+ */
+export async function convertImageDataUrlToJpeg1024(
+  imageDataUrl: string
+): Promise<ProceduralCoverArtResult> {
+  if (typeof document === 'undefined' || !imageDataUrl) {
+    return { dataUrl: '', jpegBytes: new Uint8Array(0) };
+  }
+
+  return new Promise<ProceduralCoverArtResult>((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const size = 1024;
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve({ dataUrl: '', jpegBytes: new Uint8Array(0) });
+          return;
+        }
+        ctx.fillStyle = '#0b0e14';
+        ctx.fillRect(0, 0, size, size);
+        // Center-crop square cover fill
+        const scale = Math.max(size / Math.max(1, img.width), size / Math.max(1, img.height));
+        const dw = img.width * scale;
+        const dh = img.height * scale;
+        const dx = (size - dw) * 0.5;
+        const dy = (size - dh) * 0.5;
+        ctx.drawImage(img, dx, dy, dw, dh);
+
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.91);
+        const jpegBytes = dataUrlToUint8Array(dataUrl);
+        resolve({ dataUrl, jpegBytes });
+      } catch (err) {
+        reject(err);
+      }
+    };
+    img.onerror = () => reject(new Error('Failed to decode AI cover artwork image.'));
+    img.src = imageDataUrl;
+  });
+}
+
+/**
  * Generates deterministic 1024x1024 procedural cover artwork from the 24-domain telemetry fingerprint.
  */
 export function generateProceduralCoverArt(

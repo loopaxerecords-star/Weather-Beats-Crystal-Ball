@@ -13,9 +13,13 @@ import {
 } from 'lucide-react';
 import { DomainCategory, TelemetryStatus } from '../types/telemetry';
 import { ActiveTab } from './Header';
-import { ALL_DOMAINS_LIST, UNIVERSAL_DOMAINS } from '../services/domainRegistry';
+import { ALL_DOMAINS_LIST } from '../services/domainRegistry';
 import { telemetryEngine } from '../services/telemetryEngine';
-import { audioDspEngine, SequencerPlaybackStatus } from '../services/audioDspEngine';
+import {
+  audioDspEngine,
+  LyriaFlowEngineState,
+  SequencerPlaybackStatus
+} from '../services/audioDspEngine';
 import {
   build32BarComposition,
   computeDomainVector24
@@ -74,9 +78,23 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
   const [seqStatus, setSeqStatus] = useState<SequencerPlaybackStatus>(() =>
     audioDspEngine.getSequencerStatus()
   );
+  const [prefsVersion, setPrefsVersion] = useState(0);
+  const [ambientWhispersEnabled, setAmbientWhispersEnabled] = useState<boolean>(() =>
+    audioDspEngine.getAmbientWhispersEnabled()
+  );
+  const [autoEvolveEnabled, setAutoEvolveEnabled] = useState<boolean>(() =>
+    audioDspEngine.getAutoEvolveEnabled()
+  );
+  const [lyriaState, setLyriaState] = useState<LyriaFlowEngineState>(() =>
+    audioDspEngine.getLyriaFlowState()
+  );
 
   useEffect(() => {
     if (!isOpen) return;
+    setAmbientWhispersEnabled(audioDspEngine.getAmbientWhispersEnabled());
+    setAutoEvolveEnabled(audioDspEngine.getAutoEvolveEnabled());
+    setLyriaState(audioDspEngine.getLyriaFlowState());
+    setPrefsVersion((v) => v + 1);
     const unsubTel = telemetryEngine.subscribe(() => {
       setWeatherCtx(telemetryEngine.getWeatherContext());
       setLatestByDomain(telemetryEngine.getLatestByDomain());
@@ -84,9 +102,19 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
     const unsubSeq = audioDspEngine.subscribeSequencer((status) => {
       setSeqStatus(status);
     });
+    const unsubPrefs = audioDspEngine.subscribeStudioPreferences(() => {
+      setAmbientWhispersEnabled(audioDspEngine.getAmbientWhispersEnabled());
+      setAutoEvolveEnabled(audioDspEngine.getAutoEvolveEnabled());
+      setPrefsVersion((v) => v + 1);
+    });
+    const unsubLyria = audioDspEngine.subscribeLyriaFlow((state) => {
+      setLyriaState(state);
+    });
     return () => {
       unsubTel();
       unsubSeq();
+      unsubPrefs();
+      unsubLyria();
     };
   }, [isOpen]);
 
@@ -96,8 +124,8 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
   );
 
   const compositionPlan = useMemo(
-    () => build32BarComposition(vector24, weatherCtx),
-    [vector24, weatherCtx]
+    () => build32BarComposition(vector24, weatherCtx, audioDspEngine.getCompositionOptions()),
+    [vector24, weatherCtx, prefsVersion]
   );
 
   const activeThresholdAlert = useMemo(() => {
@@ -177,7 +205,7 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
       <div
         onClick={onClose}
         aria-hidden="true"
-        className="fixed inset-0 bg-black/50 transition-opacity"
+        className="fixed inset-0 bg-black/45 transition-opacity"
       />
 
       {/* Slide-Over Right Settings Drawer */}
@@ -185,40 +213,40 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
         role="dialog"
         aria-modal="true"
         aria-label="Observatory Settings"
-        className="relative z-10 h-full w-full max-w-[460px] bg-[#0d1322] border-l border-slate-800 text-slate-100 flex flex-col shadow-2xl"
+        className="relative z-10 h-full w-full max-w-[460px] bg-[#12161f] border-l border-white/[0.08] text-[#e6e1d8] flex flex-col shadow-2xl"
       >
         {/* Clean 1-Row Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 shrink-0">
-          <h2 className="text-base font-semibold tracking-tight text-white">Settings</h2>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-white/[0.07] shrink-0">
+          <h2 className="text-base font-semibold tracking-tight text-[#ece7df]">Settings</h2>
           <button
             onClick={onClose}
             aria-label="Close Settings Drawer"
-            className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+            className="p-2 rounded-lg text-[#9c9991] hover:text-[#ece7df] hover:bg-white/[0.06] transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Clean Scrollable Sections */}
-        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5 custom-scrollbar">
           {/* 01. Stream & Atmosphere */}
-          <section className="rounded-xl bg-[#121929] border border-slate-800 p-4 space-y-3">
+          <section className="rounded-xl bg-[#181d28] border border-white/[0.07] p-4 space-y-3">
             <div className="flex items-center justify-between gap-2">
-              <h3 className="text-sm font-semibold text-white">01. Stream &amp; Atmosphere</h3>
-              <span className="text-xs font-mono tabular-nums text-slate-400">
+              <h3 className="text-sm font-semibold text-[#eae5dc]">01. Stream &amp; Atmosphere</h3>
+              <span className="text-xs font-mono tabular-nums text-[#9c9991]">
                 {eps} evt/s · Buffer {bufferPercent}%
               </span>
             </div>
 
             <div className="flex flex-col gap-2">
-              <label htmlFor="drawer-stream-mode" className="text-xs text-slate-400">
+              <label htmlFor="drawer-stream-mode" className="text-xs text-[#9c9991]">
                 Telemetry Stream Mode
               </label>
               <select
                 id="drawer-stream-mode"
                 value={telemetryMode}
                 onChange={(e) => onChangeTelemetryMode(e.target.value as TelemetryStatus)}
-                className="w-full bg-[#0b0f17] border border-slate-700 rounded-lg px-3 py-2 text-xs font-semibold text-white focus:outline-none focus:border-cyan-400 cursor-pointer"
+                className="w-full bg-[#11151d] border border-white/[0.1] rounded-lg px-3 py-2 text-xs font-medium text-[#e6e1d8] focus:outline-none focus:border-[#c8b28e]/60 cursor-pointer"
               >
                 <option value="LIVE">Live Telemetry</option>
                 <option value="SIMULATED">Simulated Data</option>
@@ -228,14 +256,14 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
               </select>
             </div>
 
-            <div className="flex items-center justify-between gap-3 pt-1">
-              <span className="text-xs font-mono tabular-nums text-slate-300 truncate">
+            <div className="space-y-2.5 pt-1">
+              <div className="text-xs font-mono tabular-nums text-[#c7c2b8] leading-relaxed">
                 {weatherCtx.region} · {weatherCtx.temperatureC.toFixed(1)}°C · AQI {weatherCtx.aqi}
-              </span>
+              </div>
               <button
                 onClick={handleSyncWeather}
                 disabled={isSyncingWeather}
-                className="px-3 py-1.5 rounded-lg bg-[#182238] hover:bg-slate-800 border border-slate-700 text-xs font-semibold text-cyan-300 flex items-center gap-1.5 whitespace-nowrap shrink-0 disabled:opacity-60"
+                className="w-full py-2 px-3 rounded-lg bg-[#202736] hover:bg-[#283144] border border-white/[0.09] text-xs font-medium text-[#a3c2bc] flex items-center justify-center gap-1.5 whitespace-nowrap transition-colors disabled:opacity-60"
               >
                 <MapPin className="w-3.5 h-3.5" />
                 <span>{isSyncingWeather ? 'Syncing...' : 'Sync Local Weather'}</span>
@@ -244,18 +272,18 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
           </section>
 
           {/* 02. Domain Lens & Alerts */}
-          <section className="rounded-xl bg-[#121929] border border-slate-800 p-4 space-y-3">
-            <h3 className="text-sm font-semibold text-white">02. Domain Lens &amp; Alerts</h3>
+          <section className="rounded-xl bg-[#181d28] border border-white/[0.07] p-4 space-y-3">
+            <h3 className="text-sm font-semibold text-[#eae5dc]">02. Domain Lens &amp; Alerts</h3>
 
             <div className="flex flex-col gap-2">
-              <label htmlFor="drawer-domain-lens" className="text-xs text-slate-400">
+              <label htmlFor="drawer-domain-lens" className="text-xs text-[#9c9991]">
                 Focused Crystal Ball Domain
               </label>
               <select
                 id="drawer-domain-lens"
                 value={focusedDomain}
                 onChange={(e) => onChangeFocusedDomain(e.target.value as 'all' | DomainCategory)}
-                className="w-full bg-[#0b0f17] border border-slate-700 rounded-lg px-3 py-2 text-xs font-semibold text-white focus:outline-none focus:border-cyan-400 cursor-pointer"
+                className="w-full bg-[#11151d] border border-white/[0.1] rounded-lg px-3 py-2 text-xs font-medium text-[#e6e1d8] focus:outline-none focus:border-[#c8b28e]/60 cursor-pointer"
               >
                 <option value="all">All 24 Domains (Unified)</option>
                 {ALL_DOMAINS_LIST.map((d) => (
@@ -267,56 +295,114 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
             </div>
 
             {focusedReading ? (
-              <div className="text-xs space-y-1 text-slate-300 font-mono tabular-nums">
+              <div className="text-xs space-y-1 text-[#c7c2b8] font-mono tabular-nums">
                 <div>
-                  {UNIVERSAL_DOMAINS[focusedReading.domainId].name}:{' '}
-                  <span className="text-cyan-300 font-semibold">
+                  {focusedReading.name}:{' '}
+                  <span className="text-[#a3c2bc] font-semibold">
                     {focusedReading.rawValue} {focusedReading.unit}
                   </span>{' '}
                   · {Math.round(focusedReading.normalized * 100)}% range
                 </div>
                 {activeThresholdAlert && (
-                  <div className="text-amber-300 font-sans">Alert status: {activeThresholdAlert}</div>
+                  <div className="text-[#d4bc94] font-sans">Alert status: {activeThresholdAlert}</div>
                 )}
               </div>
             ) : (
-              <p className="text-xs text-slate-400">
+              <p className="text-xs text-[#9c9991] leading-relaxed">
                 Monitoring all 24 active intelligence streams simultaneously.
               </p>
             )}
 
             <button
               onClick={() => onOpenDetail('dashboard')}
-              className="w-full px-3.5 py-2 rounded-lg bg-[#182238] hover:bg-slate-800 border border-slate-700 text-xs font-semibold text-slate-100 flex items-center justify-between transition-colors"
+              className="w-full px-3.5 py-2 rounded-lg bg-[#202736] hover:bg-[#283144] border border-white/[0.08] text-xs font-medium text-[#e6e1d8] flex items-center justify-between transition-colors"
             >
               <span>Open Domain Dashboard &amp; Thresholds</span>
-              <ArrowUpRight className="w-4 h-4 text-cyan-300" />
+              <ArrowUpRight className="w-4 h-4 text-[#c8b28e]" />
             </button>
           </section>
 
-          {/* 03. 32-Bar Audio DSP Studio */}
-          <section className="rounded-xl bg-[#121929] border border-slate-800 p-4 space-y-3">
+          {/* 03. Endless Flow Audio DSP Studio */}
+          <section className="rounded-xl bg-[#181d28] border border-white/[0.07] p-4 space-y-3">
             <div className="flex items-center justify-between gap-2">
-              <h3 className="text-sm font-semibold text-white">03. 32-Bar Audio DSP Studio</h3>
-              <span className="text-xs font-mono tabular-nums text-cyan-300">
+              <h3 className="text-sm font-semibold text-[#eae5dc]">03. Endless Flow Audio DSP Studio</h3>
+              <span className="text-xs font-mono tabular-nums text-[#a3c2bc]">
                 {compositionPlan.bpm} BPM
               </span>
             </div>
 
-            <div className="text-xs font-mono tabular-nums text-slate-300">
-              {compositionPlan.scaleName} ·{' '}
+            <div className="rounded-lg bg-[#11151d] border border-white/[0.08] px-3 py-2.5 space-y-1">
+              <div className="text-xs font-semibold text-[#ece7df]">
+                {compositionPlan.telemetrySignatureLabel}
+              </div>
+              <div className="text-[11px] font-mono tabular-nums text-[#c9b18a]">
+                Hour {compositionPlan.activeTelemetryHour.hourLabel} ·{' '}
+                {compositionPlan.activeTelemetryHour.mapping.instrument}
+              </div>
+              <div className="text-[11px] font-mono text-[#9c9991]">
+                {compositionPlan.scaleName} · {seqStatus.currentChord || compositionPlan.bars[0]?.chordSymbol}
+                {compositionPlan.activeMotifTitle ? ` · Motif: ${compositionPlan.activeMotifTitle}` : ''}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-xs text-[#c7c2b8]">Google Lyria Flow Live</span>
+              <button
+                onClick={() => audioDspEngine.setLyriaFlowEnabled(!lyriaState.enabled)}
+                aria-pressed={lyriaState.enabled}
+                className={`px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors whitespace-nowrap ${
+                  lyriaState.enabled
+                    ? 'bg-[#222938] text-[#a3c2bc] border-[#7fa898]/45'
+                    : 'bg-[#11151d] text-[#8f8c84] border-white/[0.08]'
+                }`}
+              >
+                {lyriaState.enabled ? 'On' : 'Off'}
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-xs text-[#c7c2b8]">Auto-Evolve AI Motifs</span>
+              <button
+                onClick={() => audioDspEngine.setAutoEvolveEnabled(!autoEvolveEnabled)}
+                aria-pressed={autoEvolveEnabled}
+                className={`px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors whitespace-nowrap ${
+                  autoEvolveEnabled
+                    ? 'bg-[#222938] text-[#a3c2bc] border-[#7fa898]/45'
+                    : 'bg-[#11151d] text-[#8f8c84] border-white/[0.08]'
+                }`}
+              >
+                {autoEvolveEnabled ? 'On' : 'Off'}
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-xs text-[#c7c2b8]">Ambient Seer Whispers</span>
+              <button
+                onClick={() => audioDspEngine.setAmbientWhispersEnabled(!ambientWhispersEnabled)}
+                aria-pressed={ambientWhispersEnabled}
+                className={`px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors whitespace-nowrap ${
+                  ambientWhispersEnabled
+                    ? 'bg-[#222938] text-[#e0cda9] border-[#c8b28e]/40'
+                    : 'bg-[#11151d] text-[#8f8c84] border-white/[0.08]'
+                }`}
+              >
+                {ambientWhispersEnabled ? 'On' : 'Off'}
+              </button>
+            </div>
+
+            <div className="text-xs font-mono tabular-nums text-[#b8b3a9] leading-relaxed">
               {seqStatus.isPlaying
-                ? `Playing Bar ${String(seqStatus.currentBar).padStart(2, '0')}/32 (${seqStatus.activeSection})`
-                : 'Sequencer Idle'}
+                ? `Bar ${seqStatus.currentBar} · ${seqStatus.activeSection} · 24 Telemetry Streams Active`
+                : 'Sequencer Idle · Continuous 24-Hour Telemetry Composition'}
             </div>
 
             <div className="flex items-center gap-2">
               <button
                 onClick={handleToggleMusic}
-                className={`flex-1 px-3.5 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-2 border transition-colors ${
+                className={`flex-1 px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 border transition-colors ${
                   seqStatus.isPlaying
-                    ? 'bg-emerald-500 text-slate-950 border-emerald-400'
-                    : 'bg-cyan-500 hover:bg-cyan-400 text-slate-950 border-cyan-400'
+                    ? 'bg-[#7fa898] hover:bg-[#8eb5a5] text-[#11151d] border-[#8eb5a5]/70'
+                    : 'bg-[#c9b18a] hover:bg-[#d5bf9b] text-[#11151d] border-[#d5bf9b]/70'
                 }`}
               >
                 {seqStatus.isPlaying ? (
@@ -324,31 +410,31 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
                 ) : (
                   <Play className="w-3.5 h-3.5 fill-current" />
                 )}
-                <span>{seqStatus.isPlaying ? 'Stop 32-Bar Beats' : 'Play 32-Bar Beats'}</span>
+                <span>{seqStatus.isPlaying ? 'Stop Endless Flow' : 'Play Endless Flow'}</span>
               </button>
             </div>
 
             <button
               onClick={() => onOpenDetail('audio_dsp')}
-              className="w-full px-3.5 py-2 rounded-lg bg-[#182238] hover:bg-slate-800 border border-slate-700 text-xs font-semibold text-slate-100 flex items-center justify-between transition-colors"
+              className="w-full px-3.5 py-2 rounded-lg bg-[#202736] hover:bg-[#283144] border border-white/[0.08] text-xs font-medium text-[#e6e1d8] flex items-center justify-between transition-colors"
             >
-              <span>Open Full 32-Bar DAW &amp; Stem Exporter</span>
-              <ArrowUpRight className="w-4 h-4 text-cyan-300" />
+              <span>Open Endless Flow DAW &amp; Stem Exporter</span>
+              <ArrowUpRight className="w-4 h-4 text-[#c8b28e]" />
             </button>
           </section>
 
           {/* 04. Voice & AI Oracle */}
-          <section className="rounded-xl bg-[#121929] border border-slate-800 p-4 space-y-3">
-            <h3 className="text-sm font-semibold text-white">04. Voice &amp; AI Oracle</h3>
+          <section className="rounded-xl bg-[#181d28] border border-white/[0.07] p-4 space-y-3">
+            <h3 className="text-sm font-semibold text-[#eae5dc]">04. Voice &amp; AI Oracle</h3>
 
             <div className="flex items-center justify-between gap-3">
-              <span className="text-xs text-slate-300">Spoken AI voice replies</span>
+              <span className="text-xs text-[#c7c2b8]">Spoken AI voice replies</span>
               <button
                 onClick={onToggleVoiceReply}
-                className={`px-3 py-1.5 rounded-lg border text-xs font-semibold flex items-center gap-1.5 transition-colors ${
+                className={`px-3 py-1.5 rounded-lg border text-xs font-medium flex items-center gap-1.5 transition-colors ${
                   voiceReplyEnabled
-                    ? 'bg-[#182238] text-cyan-300 border-cyan-500/50'
-                    : 'bg-[#0b0f17] text-slate-400 border-slate-700'
+                    ? 'bg-[#202736] text-[#a3c2bc] border-[#8eb5a5]/35'
+                    : 'bg-[#11151d] text-[#8f8c84] border-white/[0.08]'
                 }`}
               >
                 {voiceReplyEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
@@ -356,22 +442,22 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
               </button>
             </div>
 
-            <p className="text-xs text-slate-400">{speechCapabilities}</p>
+            <p className="text-xs text-[#9c9991]">{speechCapabilities}</p>
 
             <button
               onClick={onTriggerVoiceAsk}
-              className="w-full px-3.5 py-2 rounded-lg bg-[#182238] hover:bg-slate-800 border border-slate-700 text-xs font-semibold text-amber-300 flex items-center justify-center gap-2 transition-colors"
+              className="w-full px-3.5 py-2 rounded-lg bg-[#202736] hover:bg-[#283144] border border-white/[0.08] text-xs font-medium text-[#e0cda9] flex items-center justify-center gap-2 transition-colors"
             >
               <Mic className="w-4 h-4" />
               <span>Ask Crystal Ball by Voice</span>
             </button>
 
             {lastOracleResult && (
-              <div className="pt-2 border-t border-slate-800 space-y-1">
-                <div className="text-[11px] font-mono text-cyan-300">
+              <div className="pt-2 border-t border-white/[0.07] space-y-1">
+                <div className="text-[11px] font-mono text-[#a3c2bc]">
                   Last spoken reading · {lastOracleResult.intentSummary}
                 </div>
-                <p className="text-xs text-slate-300 leading-relaxed">
+                <p className="text-xs text-[#c7c2b8] leading-relaxed">
                   {lastOracleResult.answerText}
                 </p>
               </div>
@@ -379,38 +465,38 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
           </section>
 
           {/* Collapsed Advanced Tools Accordion */}
-          <section className="rounded-xl bg-[#121929] border border-slate-800 overflow-hidden">
+          <section className="rounded-xl bg-[#181d28] border border-white/[0.07] overflow-hidden">
             <button
               onClick={() => setAdvancedOpen((v) => !v)}
               aria-expanded={advancedOpen}
-              className="w-full px-4 py-3.5 flex items-center justify-between text-left hover:bg-slate-800/40 transition-colors"
+              className="w-full px-4 py-3.5 flex items-center justify-between text-left hover:bg-white/[0.03] transition-colors"
             >
               <div>
-                <div className="text-sm font-semibold text-white">Advanced Tools</div>
-                <div className="text-xs text-slate-400">
+                <div className="text-sm font-semibold text-[#eae5dc]">Advanced Tools</div>
+                <div className="text-xs text-[#9c9991]">
                   Correlation, DuckDB SQL, AI Lab, Event Log &amp; Schema
                 </div>
               </div>
               {advancedOpen ? (
-                <ChevronDown className="w-4 h-4 text-slate-400" />
+                <ChevronDown className="w-4 h-4 text-[#9c9991]" />
               ) : (
-                <ChevronRight className="w-4 h-4 text-slate-400" />
+                <ChevronRight className="w-4 h-4 text-[#9c9991]" />
               )}
             </button>
 
             {advancedOpen && (
-              <div className="border-t border-slate-800 divide-y divide-slate-800/80">
+              <div className="border-t border-white/[0.07] divide-y divide-white/[0.06]">
                 {ADVANCED_TOOLS.map((tool) => (
                   <button
                     key={tool.id}
                     onClick={() => onOpenDetail(tool.id)}
-                    className="w-full px-4 py-3 text-left hover:bg-slate-800/50 transition-colors flex items-center justify-between gap-3"
+                    className="w-full px-4 py-3 text-left hover:bg-white/[0.04] transition-colors flex items-center justify-between gap-3"
                   >
                     <div>
-                      <div className="text-xs font-semibold text-slate-100">{tool.label}</div>
-                      <div className="text-[11px] text-slate-400">{tool.detail}</div>
+                      <div className="text-xs font-semibold text-[#e6e1d8]">{tool.label}</div>
+                      <div className="text-[11px] text-[#9c9991]">{tool.detail}</div>
                     </div>
-                    <ArrowUpRight className="w-4 h-4 text-cyan-400 shrink-0" />
+                    <ArrowUpRight className="w-4 h-4 text-[#c8b28e] shrink-0" />
                   </button>
                 ))}
               </div>

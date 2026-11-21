@@ -2,10 +2,12 @@
  * DuckDB Analytical Engine Service
  * Browser Preview: DuckDB-Wasm initialized with Web Worker or IndexedDB Analytical Fallback.
  * Preserves strict evidence transparency: never claims DuckDB is active if falling back to IndexedDB.
+ * Enforces read-only SELECT-only SQL validation.
  */
 
 import { TelemetryEvent, CanonicalTelemetryRecord } from '../types/telemetry';
 import { canonicalToTelemetryEvent } from './canonicalDataModel';
+import { validateReadOnlySqlClient } from './aiIntelligenceSuite';
 
 export interface QueryResult {
   columns: string[];
@@ -21,7 +23,8 @@ class DuckDbService {
   private dbInstance: any = null;
   private conn: any = null;
   private inMemoryEvents: TelemetryEvent[] = [];
-  private engineType: 'DuckDB-Wasm Engine' | 'IndexedDB Temporal Analytical Engine' = 'IndexedDB Temporal Analytical Engine';
+  private engineType: 'DuckDB-Wasm Engine' | 'IndexedDB Temporal Analytical Engine' =
+    'IndexedDB Temporal Analytical Engine';
 
   public async init(): Promise<boolean> {
     if (this.isInitialized) return true;
@@ -112,11 +115,17 @@ class DuckDbService {
   }
 
   public async executeSql(sqlQuery: string): Promise<QueryResult> {
+    const validation = validateReadOnlySqlClient(sqlQuery);
+    if (!validation.ok) {
+      throw new Error(validation.error || 'Only read-only SELECT queries are permitted.');
+    }
+
+    const safeSql = validation.sql;
     const startTime = performance.now();
 
     if (this.isDuckDbNative && this.conn) {
       try {
-        const arrowResult = await this.conn.query(sqlQuery);
+        const arrowResult = await this.conn.query(safeSql);
         const schema = arrowResult.schema;
         const columns = schema.fields.map((f: any) => f.name);
         const rows: any[][] = [];
@@ -142,22 +151,67 @@ class DuckDbService {
       }
     }
 
+    // Enhanced IndexedDB Temporal Analytical Fallback supporting WHERE domain, GROUP BY, ORDER BY, LIMIT
+    const lowerSql = safeSql.toLowerCase();
+    let filtered = [...this.inMemoryEvents];
+
+    const domainEqMatch = lowerSql.match(/domain\s*=\s*'([a-z0-9_]+)'/);
+    if (domainEqMatch) {
+      const targetDomain = domainEqMatch[1];
+      filtered = filtered.filter((e) => e.domain.toLowerCase() === targetDomain);
+    } else {
+      const domainInMatch = lowerSql.match(/domain\s+in\s*\(([^)]+)\)/);
+      if (domainInMatch) {
+        const allowed = domainInMatch[1]
+          .split(',')
+          .map((s) => s.replace(/['"\s]/g, '').toLowerCase())
+          .filter(Boolean);
+        if (allowed.length > 0) {
+          filtered = filtered.filter((e) => allowed.includes(e.domain.toLowerCase()));
+        }
+      }
+    }
+
+    const limitMatch = lowerSql.match(/\blimit\s+(\d+)/);
+    const limit = limitMatch ? Math.max(1, Math.min(200, Number(limitMatch[1]))) : 50;
+
     const rows: any[][] = [];
-    const lowerSql = sqlQuery.toLowerCase();
 
-    if (lowerSql.includes('count')) {
-      const columns = ['domain', 'event_count', 'avg_quality'];
-      const counts: Record<string, { count: number; sumQuality: number }> = {};
-      
-      this.inMemoryEvents.forEach(evt => {
-        if (!counts[evt.domain]) counts[evt.domain] = { count: 0, sumQuality: 0 };
-        counts[evt.domain].count++;
-        counts[evt.domain].sumQuality += evt.quality.quality_score ?? 1.0;
+    if (lowerSql.includes('group by') || lowerSql.includes('count(') || lowerSql.includes('avg(')) {
+      const columns = ['domain', 'event_count', 'avg_quality', 'latest_value', 'latest_time'];
+      const groups: Record<
+        string,
+        { count: number; sumQuality: number; latestVal: unknown; latestTime: string }
+      > = {};
+
+      filtered.forEach((evt) => {
+        if (!groups[evt.domain]) {
+          groups[evt.domain] = {
+            count: 0,
+            sumQuality: 0,
+            latestVal: evt.measurement.value,
+            latestTime: evt.event_time
+          };
+        }
+        groups[evt.domain].count++;
+        groups[evt.domain].sumQuality += evt.quality.quality_score ?? 1.0;
+        groups[evt.domain].latestVal = evt.measurement.value;
+        groups[evt.domain].latestTime = evt.event_time;
       });
 
-      Object.entries(counts).forEach(([dom, data]) => {
-        rows.push([dom, data.count, Number((data.sumQuality / data.count).toFixed(3))]);
-      });
+      const entries = Object.entries(groups).map(([dom, data]) => [
+        dom,
+        data.count,
+        Number((data.sumQuality / Math.max(1, data.count)).toFixed(3)),
+        typeof data.latestVal === 'number' ? Number(data.latestVal.toFixed(2)) : JSON.stringify(data.latestVal),
+        new Date(data.latestTime).toLocaleTimeString()
+      ]);
+
+      if (lowerSql.includes('order by') && lowerSql.includes('desc')) {
+        entries.sort((a, b) => Number(b[1]) - Number(a[1]));
+      }
+
+      rows.push(...entries.slice(0, limit));
 
       return {
         columns,
@@ -168,14 +222,27 @@ class DuckDbService {
       };
     }
 
-    // Default SELECT *
-    const columns = ['event_id', 'domain', 'measurement_id', 'data_class', 'origin_type', 'event_time', 'quality_score'];
-    const sampleEvents = this.inMemoryEvents.slice(-50);
-    sampleEvents.forEach(evt => {
+    // Standard SELECT rows
+    const columns = [
+      'event_id',
+      'domain',
+      'measurement_id',
+      'value_json',
+      'data_class',
+      'origin_type',
+      'event_time',
+      'quality_score'
+    ];
+    const ordered = lowerSql.includes('order by') && lowerSql.includes('asc')
+      ? filtered.slice(0, limit)
+      : filtered.slice(-limit).reverse();
+
+    ordered.forEach((evt) => {
       rows.push([
         evt.event_id,
         evt.domain,
         evt.measurement.measurement_id,
+        JSON.stringify(evt.measurement.value),
         evt.data_class,
         evt.origin_type,
         new Date(evt.event_time).toLocaleTimeString(),

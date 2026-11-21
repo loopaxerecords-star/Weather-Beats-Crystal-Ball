@@ -17,7 +17,7 @@ import { VoiceQueryResult } from './services/voiceTelemetryOracle';
 
 const DETAIL_TITLES: Record<ActiveTab, string> = {
   dashboard: 'Domain Telemetry & Thresholds',
-  audio_dsp: '32-Bar Audio DSP Studio & Exporter',
+  audio_dsp: 'Endless Flow Audio DSP Studio & Exporter',
   cross_domain: 'Cross-Domain Correlation',
   duckdb: 'DuckDB Analytical Store',
   ai_lab: 'AI Intelligence Lab',
@@ -87,7 +87,7 @@ export default function App() {
     focusedDomain === 'all' ? lastSpecificDomain : focusedDomain;
 
   return (
-    <div className="relative h-screen w-screen bg-[#05070e] text-slate-100 overflow-hidden font-sans">
+    <div className="relative h-screen w-screen bg-[#0b0e14] text-[#e6e1d8] overflow-hidden font-sans">
       {/* Main Interactive Experience: Celestial Brass Astrolabe Crystal Ball + Top-Right Cogwheel */}
       <CrystalBallExperience
         focusedDomain={focusedDomain}
@@ -122,23 +122,23 @@ export default function App() {
           role="dialog"
           aria-modal="true"
           aria-label={DETAIL_TITLES[activeDetailView]}
-          className="fixed inset-0 z-50 flex flex-col h-screen w-screen bg-[#0b0f17] text-slate-100 overflow-hidden"
+          className="fixed inset-0 z-50 flex flex-col h-screen w-screen bg-[#10141c] text-[#e6e1d8] overflow-hidden"
         >
           {/* Slim Single-Row Breadcrumb Bar */}
-          <div className="flex items-center justify-between gap-4 px-6 py-3 bg-[#090d16] border-b border-slate-800 shrink-0">
+          <div className="flex items-center justify-between gap-4 px-6 py-3 bg-[#141923] border-b border-white/[0.07] shrink-0">
             <div className="flex items-center gap-4 min-w-0">
               <button
                 onClick={() => {
                   setActiveDetailView('none');
                   setIsDrawerOpen(true);
                 }}
-                className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-[#141c2e] hover:bg-slate-800 text-slate-200 border border-slate-700 flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
+                className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-[#1b2230] hover:bg-[#232b3c] text-[#dcd7cd] border border-white/[0.08] flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
               >
-                <ArrowLeft className="w-3.5 h-3.5 text-cyan-400" />
+                <ArrowLeft className="w-3.5 h-3.5 text-[#c8b28e]" />
                 <span>Back to Settings</span>
               </button>
 
-              <span className="text-sm font-semibold text-white truncate">
+              <span className="text-sm font-semibold text-[#ece7df] truncate">
                 {DETAIL_TITLES[activeDetailView]}
               </span>
             </div>
@@ -149,7 +149,7 @@ export default function App() {
                   aria-label="Select Intelligence Domain"
                   value={activeSpecificDomain}
                   onChange={(e) => handleChangeFocusedDomain(e.target.value as DomainCategory)}
-                  className="bg-[#0d1322] border border-slate-700 rounded-lg px-3 py-1.5 text-xs font-semibold text-white focus:outline-none focus:border-cyan-400 cursor-pointer"
+                  className="bg-[#11151d] border border-white/[0.1] rounded-lg px-3 py-1.5 text-xs font-semibold text-[#e6e1d8] focus:outline-none focus:border-[#c8b28e]/60 cursor-pointer"
                 >
                   {ALL_DOMAINS_LIST.map((d) => (
                     <option key={d.id} value={d.id}>
@@ -164,9 +164,9 @@ export default function App() {
                   setActiveDetailView('none');
                   setIsDrawerOpen(false);
                 }}
-                className="px-3.5 py-1.5 text-xs font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
+                className="px-3.5 py-1.5 text-xs font-semibold rounded-lg bg-[#1e2534] hover:bg-[#273042] text-[#ece7df] border border-white/[0.08] flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
               >
-                <X className="w-3.5 h-3.5 text-cyan-400" />
+                <X className="w-3.5 h-3.5 text-[#c8b28e]" />
                 <span>Return to Crystal Ball</span>
               </button>
             </div>
